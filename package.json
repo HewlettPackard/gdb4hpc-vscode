@@ -1,7 +1,8 @@
 {
   "name": "gdb4hpc",
   "displayName": "GDB4HPC",
-  "version": "1.1.1",
+  "version": "1.0.0",
+  "publisher": "HPE-CDST",
   "repository": {
     "type": "git",
     "url": "https://github.hpe.com/hpcde/cdst-gdb4hpc.git"
@@ -36,11 +37,12 @@
     "@vscode/debugadapter": "^1.49.0",
     "@vscode/debugprotocol": "^1.51.0",
     "await-notify": "^1.0.1",
-    "node-pty": "^1.0.0"
+    "node-pty": "^1.0.0",
+    "vsce": "^2.15.0"
   },
   "devDependencies": {
     "@types/node": "^14.14.37",
-    "@vscode/vsce": "^2.0.0",
+    "@vscode/vsce": "^2.24.0",
     "esbuild": "^0.20.1",
     "typescript": "^4.3.5"
   },
