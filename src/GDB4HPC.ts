@@ -152,11 +152,9 @@ export class GDB4HPC extends EventEmitter {
       case 'stopped':
           this.inferiorRunning = false;
           let reason = record.getInfo('reason');
-
           switch (reason) {
             case 'breakpoint-hit':
             case 'end-stepping-range':
-              
               const fileName=record.getInfo('frame')["fullname"];
               const line = parseInt(record.getInfo('frame')["line"]);
               
@@ -417,9 +415,8 @@ export class GDB4HPC extends EventEmitter {
           const stackFinal: DebugProtocol.StackFrame[] = [];
           let stack = record.getInfo('stack');
           for (let i = startFrame; i < Math.min(endFrame, stack.length); i++) {
-            let frame = stack[i];
-            frame = frame[1];
-            const sf: DebugProtocol.StackFrame = new StackFrame(i,frame.func,new Source(frame.file? frame.file.split('\\').pop().split('/').pop() : '??',frame.fullname),parseInt(frame.line));
+            let frame = stack[i].frame;
+            const sf: DebugProtocol.StackFrame = new StackFrame(i,frame.func,new Source(frame.file? frame.file: '??',frame.fullname),parseInt(frame.line));
             sf.instructionPointerReference = frame.addr;
             stackFinal.push(sf);
           }

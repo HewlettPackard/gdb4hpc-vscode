@@ -90,7 +90,7 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 					let new_script={name:name, stopOnError: stopOnError, asserts:asserts, checked: false}
 					
 					//build assert script
-					this.session._debugger.buildAssertionScript(new_script).then(()=>{
+					this.session.gdb4hpc.buildAssertionScript(new_script).then(()=>{
 						script_list.push(new_script)
 						this._view?.webview.postMessage({type:'scriptsUpdated', value: script_list});
 					},null);
@@ -104,7 +104,7 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 		if (!choice[0].name){
 			return;
 		}
-		this.session._debugger.runAssertionScript(choice[0]);
+		this.session.gdb4hpc.runAssertionScript(choice[0]);
 	}
 
 	getAssertionResults(){
@@ -112,7 +112,7 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 		if (!choice){
 			return;
 		}
-		this.session._debugger.getAssertionResults(choice[0]).then(()=>{
+		this.session.gdb4hpc.getAssertionResults(choice[0]).then(()=>{
 			this._view?.webview.postMessage({type:'scriptsUpdated', value: script_list});
 		});
 	}
