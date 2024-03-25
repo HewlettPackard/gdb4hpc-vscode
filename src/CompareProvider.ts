@@ -55,7 +55,7 @@ export class CompareProvider implements vscode.WebviewViewProvider {
   }
 
 	runComparisons(){
-		this.session._debugger.runComparisons().then(()=>{
+		this.session.gdb4hpc.runComparisons().then(()=>{
 			this._view?.webview.postMessage({type:'comparesUpdated', value: compare_list});
 		});
 	}

@@ -3,8 +3,8 @@
 export class Record {
   private readonly recStr: string = '';
   private readonly token: number;
-  private readonly type?: string = '';
-  private readonly reason?: string;  
+  private readonly type: string = '';
+  private readonly reason: string;  
   private info: Map<string, any>;
 
   public constructor(token: number, type: string, reason: string, recStr: string) {
@@ -28,7 +28,7 @@ export class Record {
   }
 
   public addInfo(result: any) {
-    this.info.set(result[0], result[1]);
+    this.info.set(Object.keys(result)[0],Object.values(result)[0]);
   }
 
   public getInfo(key: string): any {
@@ -46,9 +46,11 @@ export class MIParser {
   public parseRecord(str:string): Record | null {
     let match: any[] | null;
     this.buffer = str;
-    // captures token, type of message, and message reason or full stream message
-    let regex = /(\d*)?(\*|~|\^|@)((?:(?<=\*)[_a-zA-Z0-9\-]*)|(?:(?<=\^)done|running|connected|error|exit?)|(?:(?<=\~|@)\".*?\s*\"$))/;
-    if ((match = regex.exec(this.buffer))) {
+    // captures (token)(type of message)   (message reason or full stream message)
+    let regex = /(\d*)?(\*|~|\^|@)((?:(?<=\*)[\w\-]*)|(?:(?<=\^)done|running|connected|error|exit?)|(?:(?<=\~|@)\".*?\s*\"$))/;
+    if(this.buffer.startsWith("mi: ")){
+      return new Record(NaN, "mi", "", this.buffer.split("mi: ")[1]);
+    }else if ((match = regex.exec(this.buffer))) {
       let token = match[1]!=''?parseInt(match[1]):NaN;
       if (match[2]=='~'||match[2]=='@'){
         //Stream message - remove the opening and closing quotes and any newlines
@@ -58,89 +60,83 @@ export class MIParser {
       }else if (match[2]=='^'||match[2]=='*'){
         const record = new Record(token,match[2], match[3], this.buffer)
         this.buffer = this.buffer.split(match[0])[1];
-        while (this.buffer[0] === ',') {
-          this.buffer = this.buffer.substring(1);
-          const result = this.parseVariable();
-          result?record.addInfo(result):null;
+        this.buffer = this.buffer.substring(1);
+        const results = this.parseVar();
+        if (results.length!==0){
+          results.forEach((result)=>{
+            result?record.addInfo(result):null;
+          })
         }
         return record;
       }
-    }else if(this.buffer.startsWith("mi: ")){
-      return new Record(NaN, "mi", "", this.buffer.split("mi: ")[1]);
     }
     return null;
   }
 
-  private parseVariable(): any[] | null {
+  private parseVar(ind?:number): any | null {
     let match: any[] | null;
-    //match variable name
-    if ((match = /^\s*([a-zA-Z_][a-zA-Z0-9_\-]*)\=/.exec(this.buffer))) {
-      this.buffer = this.buffer.substring(match[0].length);
-      //get variable value
-      let val = this.parseValue();
-      return [match[1], val];
-    } 
-    return null;
+    let results: any[] = [];
+    //match                 match[1]                 match[2]                match[3]
+    //regex               (variable name) =         ("|{|[|]|})  (if quotes, get string in between)
+    let regex =   /(?:(?:\s*([a-zA-Z_][\w\-]*)\=)?("|\[|\{|\}|\])(?:(?<=\=")(.*?)(?=(?<!\\)")")?)/g
+    //if index is provided, move the regex to that index
+    if(ind){
+      regex.lastIndex=ind;
+    }
+    //while matches can be found
+    while(match = regex.exec(this.buffer)){
+      let variable: any;
+      let val: any;
+      // if it is the end of list or object, return all results gotten and last index of regex
+      if (match[2]=="\]"|| match[2]=="}"){
+        return {res:results, ind:regex.lastIndex};
+      }
+      //if not a {} or [], push item to results 
+      else if (match[2]!="\{"&&match[2]!="\["){
+        variable = match[1];
+        val = match[3];
+      }
+      // if { or [, go into getResults to recursively get results of the bracket or curly brace
+      else{
+        let res = this.getResults(match[2], regex.lastIndex)
+        //move regex index to new index so it doesn't repeat what was found recursively
+        regex.lastIndex=res.ind 
+        // results from getResults should be pushed to final result string
+        variable = match[1];
+        val = res.results;
+      }
+      // if variable name provided, results should be pushed as a key-value pair, otherwise push results
+      if (variable){
+        var obj = {}
+        obj[variable]=val
+        results.push(obj)
+      }else{
+        results.push(val)
+      }
+    }
+    return results;
   }
 
-  private parseValue(): any {
-    let result: any[] | null;
-
-    const skipChars = ((len: number)=>{
-      this.buffer = this.buffer.substring(len);
-    })
-
-    switch (this.buffer[0]) {
-      case '"':
-        //value is string
-        if ((result = /^\"((\\.|[^"])*)\"/.exec(this.buffer))) {
-          //move buffer
-          skipChars(result[0].length);
-          //return string without quotes
-          return result[1];
-        } else {
-          throw new Error('could not parse: ' + this.buffer);
-        }
-
-      case '{':
-        //value should be made up of sequence of variables
-        const tuple = <any>{};
-
-        while (this.buffer[0] === '{' || this.buffer[0] === ',') {
-          skipChars(1);
-          //get each variable and its value
-          const result = this.parseVariable();
-          result ? tuple[result[0]] = result[1] : null;
-        }
-
-        skipChars(1);
-        return tuple;
-
-      case '[':
+  private getResults(type: string, new_ind: any){
+    //parse the inside of { or [ to get the results inside
+    let result = this.parseVar(new_ind);
+    switch (type){
+      //if { put all results in key value pairs
+      case "\{":
+        const pairs: any = {};
+        result.res.forEach((item)=>{
+          pairs[Object.keys(item)[0]]=Object.values(item)[0]
+        })
+        return {results: pairs, ind: result.ind};
+      // if [ push all results to an array
+      case "\[":
         const list: any = [];
-
-        // skip [
-        skipChars(1);
-
-        if (['"', '[', '{'].indexOf(this.buffer[0]) !== -1) {
-        // could be a list of values, a list of lists, or a list of tuples
-          while ((result = this.parseValue())) {
-            skipChars(1);
-            list.push(result);
-          }
-        } else {
-        //otherwise it is a list of variables
-          while ((result = this.parseVariable())) {
-            skipChars(1);
-            list.push(result);
-          }
-        }
-
-        skipChars(1);
-        return list;
-
+        result.res.forEach((item)=>{
+          list.push(item);
+        })
+        return {results: list, ind: result.ind};
       default:
-        return null;
+        return {results:"",ind:new_ind};
     }
   }
 }

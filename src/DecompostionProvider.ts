@@ -79,7 +79,7 @@ export class DecompositionProvider implements vscode.WebviewViewProvider {
 			decomp_cmds.push('decomposition '+value);
 			
 			if (value.split(" ").length>1){
-				this.session._debugger.buildDecomposition(decomp_cmds).then((decomps)=>{
+				this.session.gdb4hpc.buildDecomposition(decomp_cmds).then((decomps)=>{
 					this._view?.webview.postMessage({type:'decompsUpdated', value: decomps});
 				})
 			}else{
@@ -87,7 +87,7 @@ export class DecompositionProvider implements vscode.WebviewViewProvider {
 				add_sub_command().then(()=>{
 					add_missing_content().then((resolved)=>{
 						if (resolved){
-							this.session._debugger.buildDecomposition(decomp_cmds).then((decomps)=>{
+							this.session.gdb4hpc.buildDecomposition(decomp_cmds).then((decomps)=>{
 								this._view?.webview.postMessage({type:'decompsUpdated', value: decomps});
 							})
 						}

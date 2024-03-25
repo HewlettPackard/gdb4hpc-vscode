@@ -12,12 +12,12 @@ export class FocusProvider implements vscode.TreeDataProvider<Procset> {
   readonly onDidChangeTreeData: vscode.Event<Procset | undefined | null | void> = this._onDidChangeTreeData.event;
 
   refresh(session: any): void {
-    session._debugger.getProcsetList();
+    session.gdb4hpc.getProcsetList();
     this._onDidChangeTreeData.fire();
   }
 
   changeFocus(session: any, pe_name:string): void {    
-    session._debugger.changeFocus(pe_name);
+    session.gdb4hpc.changeFocus(pe_name);
     this._onDidChangeTreeData.fire();
   }
 
@@ -42,7 +42,7 @@ export class FocusProvider implements vscode.TreeDataProvider<Procset> {
       vscode.window.showInputBox(input_procset_box).then(value => {
         if (!value) return;
         procset = value;
-        session._debugger.addProcset(name, procset).then(()=> this.refresh(session))
+        session.gdb4hpc.addProcset(name, procset).then(()=> this.refresh(session))
       });
     });    
   }
