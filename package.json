@@ -5,7 +5,7 @@
   "publisher": "HPE-CDST",
   "repository": {
     "type": "git",
-    "url": "https://github.hpe.com/hpcde/cdst-gdb4hpc.git"
+    "url": "https://github.com/HewlettPackard/gdb4hpc-vscode.git"
   },
   "license": "MIT",
   "description": "GDB4HPC Debugger",
