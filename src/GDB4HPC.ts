@@ -32,7 +32,7 @@ export class GDB4HPC extends EventEmitter {
   private mi_log: vscode.OutputChannel;
   private error_log: vscode.OutputChannel;
   private gdb4hpcReady = false;
-  private inferiorRunning = false;
+  private appRunning = false;
   private parser: MIParser = new MIParser();
   private token = 0;
   private buffer ='';
@@ -86,8 +86,23 @@ export class GDB4HPC extends EventEmitter {
         this.mi_log.dispose();
       });
 
+      //gdb4hpc is ready to use
       this.gdb4hpcReady = true;
       resolve(true)
+    });
+  }
+  
+  //send command to gdb4hpc and get the parsed output back
+  public sendCommand(command: string): Promise<Record> {
+    return new Promise(resolve => {
+      if (!command.includes("-")) command = `${command}\n`;
+      else command = `${++this.token +command}\n`;
+      this.gdb4hpcPty.write(command);
+
+      //sends the parsed record back to the function that called the command
+      this.handlers[this.token] = (record: Record) => {
+        resolve(record);
+      };
     });
   }
 
@@ -150,7 +165,7 @@ export class GDB4HPC extends EventEmitter {
   private handleAsyncRecord(record: Record) {
     switch (record.getReason()) {
       case 'stopped':
-          this.inferiorRunning = false;
+          this.appRunning = false;
           let reason = record.getInfo('reason');
           switch (reason) {
             case 'breakpoint-hit':
@@ -179,8 +194,7 @@ export class GDB4HPC extends EventEmitter {
                     editor.revealRange(range);
                   });
               });
-              
-              this.gdb4hpcReady=true;
+
               //FIX: hard coded 1 thread- will add task to fix
               this.emit(reason, 1);
               break;
@@ -196,9 +210,37 @@ export class GDB4HPC extends EventEmitter {
         break;
 
       case 'running':
-        this.inferiorRunning = true;
+        this.appRunning = true;
         break;
     }
+  }
+
+  public continue(): Promise<any> {
+      return this.sendCommand('-exec-continue');
+  }
+
+  public stepIn(): Promise<any> {
+    return this.sendCommand(`-exec-step`);
+  }
+
+  public next(): Promise<any> {
+    return this.sendCommand(`-exec-next`);
+  }
+
+  public pause(): Promise<boolean> {
+    return new Promise(resolve => {
+      if (!this.appRunning) {
+        resolve(true);
+      } else {
+        this.sendCommand(`-exec-interrupt`).then(() => {
+          resolve(true);
+        });
+      }
+    });
+  }
+
+  public terminate(): Promise<any> {
+    return this.sendCommand('-gdb-exit');
   }
 
   public clearBreakpoints(fileName: string): Promise<boolean> {
@@ -232,35 +274,6 @@ export class GDB4HPC extends EventEmitter {
         resolve(threadsResult);
       });
     });
-  }
-
-
-  public continue(): Promise<any> {
-      return this.sendCommand('-exec-continue');
-  }
-
-  public stepIn(): Promise<Record> {
-    return this.sendCommand(`-exec-step`);
-  }
-
-  public next(): Promise<Record> {
-    return this.sendCommand(`-exec-next`);
-  }
-
-  public pause(): Promise<boolean> {
-    return new Promise(resolve => {
-      if (!this.inferiorRunning) {
-        resolve(true);
-      } else {
-        this.sendCommand(`-exec-interrupt`).then(() => {
-          resolve(false);
-        });
-      }
-    });
-  }
-
-  public terminate(): Promise<any> {
-    return this.sendCommand('-gdb-exit');
   }
 
   public getVariable(name: string): Variable[] | undefined {
@@ -326,6 +339,7 @@ export class GDB4HPC extends EventEmitter {
     });
   }
   
+  // send var-update command to gdb4hpc and get answer
   private updateVariables(): Promise<DbgVar[]> {
     return new Promise(resolve => {
       this.sendCommand(`-var-update --all-values *`).then((record:Record)=> {
@@ -361,29 +375,29 @@ export class GDB4HPC extends EventEmitter {
     });
   }
 
+  //Converts variable to the debug adapter variable
   private convertVariable(variable: DbgVar): Variable[]{
-    
-	const variables: Variable[] = [];
-  if (variable){
-        variable.values.forEach(val => {
-          if (typeof val.value === 'string' && val.value) {
-            val.value = val.value.replace(/\\r/g, ' ').replace(/\\t/g, '\t').replace(/\\v/g, '\v').replace(/\\"/g, '"')
-                                      .replace(/\\'/g, "'").replace(/\\\\/g, '\\').replace(/\\n/g, ' ');
-          }
+    const variables: Variable[] = [];
+    if (variable){
+      variable.values.forEach(val => {
+        if (typeof val.value === 'string' && val.value) {
+          val.value = val.value.replace(/\\r/g, ' ').replace(/\\t/g, '\t').replace(/\\v/g, '\v').replace(/\\"/g, '"')
+                                    .replace(/\\'/g, "'").replace(/\\\\/g, '\\').replace(/\\n/g, ' ');
+        }
 
-          if(val.value){
-            let name = variable.name+"("+val.procset+"{"+val.group+"})"
-            const v: DebugProtocol.Variable = new Variable(name, val.value, variable.numberOfChildren ? variable.referenceID : 0, variable.referenceID);
-            v.variablesReference = variable.referenceID;
-            v.type = variable.type;
-            variables.push(v);
-          }
-        });
-      }
-      return variables;
-
+        if(val.value){
+          let name = variable.name+"("+val.procset+"{"+val.group+"})"
+          const v: DebugProtocol.Variable = new Variable(name, val.value, variable.numberOfChildren ? variable.referenceID : 0, variable.referenceID);
+          v.variablesReference = variable.referenceID;
+          v.type = variable.type;
+          variables.push(v);
+        }
+      });
+    }
+    return variables;
   }
   
+  //get list of variables from gdb4hpc
   public getVariables(): Promise<Variable[]> {
     return new Promise(resolve => {
       this.sendCommand(`-stack-list-variables`).then((record: Record) => {
@@ -425,20 +439,9 @@ export class GDB4HPC extends EventEmitter {
       });
 	}
 
-  public sendCommand(command: string): Promise<Record> {
-    return new Promise(resolve => {
-      if (!command.includes("-")) command = `${command}\n`;
-      else command = `${++this.token +command}\n`;
-      this.gdb4hpcPty.write(command);
-      this.handlers[this.token] = (record: Record) => {
-        resolve(record);
-      };
-    });
-  }
-
-
   public setBreakpoints(fileName: string, breakpoints: DebugProtocol.SourceBreakpoint[]): Promise<Breakpoint[]> {
     return new Promise(resolve => {
+    //gdb4hpc needs to be connected and ready before breakpoints can be set
       if (this.gdb4hpcReady) {
         this.clearBreakpoints(fileName).then(() => {
           const breakpointsPending: Promise<void>[] = [];
@@ -465,7 +468,7 @@ export class GDB4HPC extends EventEmitter {
         });
       } else {
         const intv = setInterval(() => {
-          if (!this.inferiorRunning) {
+          if (!this.appRunning) {
             clearInterval(intv);
             this.setBreakpoints(fileName, breakpoints).then(bps =>resolve(bps));
           }
