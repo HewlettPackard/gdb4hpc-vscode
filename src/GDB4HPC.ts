@@ -13,13 +13,13 @@ import { compare_list } from './CompareProvider';
 
 export var pe_list: Procset[] = [];
 
-export class DbgVar {
-  public name: string;  //name of variable
-  public referenceName: string;  //name assigned by MI
-  public numberOfChildren: number;   //number of children
-  public referenceID: number;  //scope tracking id
-  public type: string;   //variable type
-  public values: any[]=[];
+export interface DbgVar {
+  name: string;  //name of variable
+  referenceName: string;  //name assigned by MI
+  childNum: number;   //number of children
+  referenceID: number;  //scope tracking id
+  type: string;   //variable type
+  values: any[];
 }
 
 export class GDB4HPC extends EventEmitter {
@@ -33,10 +33,10 @@ export class GDB4HPC extends EventEmitter {
   private error_log: vscode.OutputChannel;
   private gdb4hpcReady = false;
   private appRunning = false;
+  private cmdPending: any[] = [];
+  private data ='';
   private parser: MIParser = new MIParser();
-  private token = 0;
-  private buffer ='';
-  private handlers: {[token: number]: (record: Record) => void} = [];
+  private token = 1;
   private breakpoints = new Map<string, number[]>();
   private variables: DbgVar[]=[];
 
@@ -49,7 +49,6 @@ export class GDB4HPC extends EventEmitter {
     this.mi_log = vscode.window.createOutputChannel("MI Log");
     this.error_log = vscode.window.createOutputChannel("Error Log");
     this.createPty().then(()=>{
-      this.output_panel.show();
       this.launchApps();
     });
   }
@@ -93,106 +92,100 @@ export class GDB4HPC extends EventEmitter {
   }
   
   //send command to gdb4hpc and get the parsed output back
-  public sendCommand(command: string): Promise<Record> {
+  public sendCommand(command: string): Promise<any> {
     return new Promise(resolve => {
-      if (!command.includes("-")) command = `${command}\n`;
-      else command = `${++this.token +command}\n`;
-      this.gdb4hpcPty.write(command);
-
-      //sends the parsed record back to the function that called the command
-      this.handlers[this.token] = (record: Record) => {
-        resolve(record);
-      };
+      if (!command.includes("-")) {
+        command = `${command}\n`;
+        this.gdb4hpcPty.write(command);
+        resolve(true);
+      }
+      else {
+        command = `${this.token +command}\n`;
+        this.gdb4hpcPty.write(command);
+        //once token is found the parsed record is sent back to the function that called the command
+        this.cmdPending.push({token: this.token, res: ((record: Record) => {
+          resolve(record);
+        })})
+        this.token++;
+      }
     });
   }
 
   private handleOutput(data: any): void {
-    let record: Record | null;
-    this.buffer+=data;
+    let lines: string[] = []
+
+    const getLines = (i: number)=>{
+      if(i < 0) return;
+      lines = this.data.slice(0, i).split('\n');
+      this.data = this.data.slice(i + 1);
+    }
+    this.data+=data;
+    if (!this.data) return;
     
-    if (!this.buffer){
-      return;
-    }
+    getLines(this.data.lastIndexOf('\n'));
 
-    const nPos = this.buffer.lastIndexOf('\n');
-    if (nPos !== -1) {
-      const lines = this.buffer.substring(0, nPos).split('\n') as string[];
-      this.buffer = this.buffer.substring(nPos + 1);
+    lines.forEach(line => {
+      line = line.trim();
+      let record = this.parser.parseRecord(line);
+      if(record){
+        switch (record.type) {
+          case '*':
+            this.handleAsyncRecord(record);
+            break;
 
-      lines.forEach(line => {
-        line = line.trim();
-        record = this.parser.parseRecord(line);
-        if(record){
-          switch (record.getType()) {
-            case '*':
-              this.handleAsyncRecord(record);
+          case '~':
+            this.emit('output', record.recStr, 'console');
+            break;
+
+          case 'mi':
+              this.mi_log.appendLine(record.recStr);
               break;
-
-            case '~':
-              this.emit('output', record.printRecord(), 'console');
-              break;
-
-            case 'mi':
-                this.mi_log.appendLine(record.printRecord());
-                break;
-            
-            case '@':
-              this.output_panel.appendLine(record.printRecord());
-              this.output_panel.show(); //always display output panel if output was added
-              break;
-            
-            case '^':
-              if (!isNaN(record.getToken())) {
-                const handler = this.handlers[record.getToken()];
           
-                if (handler) {
-                  handler(record);
-                  delete this.handlers[record.getToken()];
-                } 
-              }else{
-                if(record.getReason()=="error"){
-                  vscode.window.showErrorMessage(record.getInfo('msg'))
-                  this.error_log.appendLine(record.getInfo('msg'));
-                }
+          case '@':
+            this.output_panel.appendLine(record.recStr);
+            this.output_panel.show(); //always display output panel if output was added
+            break;
+          
+          case '^':
+            if (!isNaN(record.token)) {
+              const promise = this.cmdPending.find((element) => element.token == record!.token);
+              promise?.res(record);
+              const index = this.cmdPending.indexOf(promise);
+              (index > -1)?this.cmdPending.splice(index, 1):null;
+              
+            }else{
+              if(record.reason=="error"){
+                vscode.window.showErrorMessage(record.info?.get('msg'))
+                this.error_log.appendLine(record.info?.get('msg'));
               }
-              break;
-          } 
-        }
-      });
-    }
+            }
+            break;
+          default:
+            break;
+        } 
+      }
+    });
   }
 
   private handleAsyncRecord(record: Record) {
-    switch (record.getReason()) {
+    switch (record.reason) {
       case 'stopped':
           this.appRunning = false;
-          let reason = record.getInfo('reason');
+          let reason = record.info?.get('reason');
           switch (reason) {
             case 'breakpoint-hit':
             case 'end-stepping-range':
-              const fileName=record.getInfo('frame')["fullname"];
-              const line = parseInt(record.getInfo('frame')["line"]);
-              
-              if (reason === 'breakpoint-hit') {
-                const bkptnum = parseInt(record.getInfo('bkptno'));
-                const breakpointIDs: number[] = [];
-                breakpointIDs.push(bkptnum);
+              const fullName=record.info?.get('frame')["fullname"];
+              const line = parseInt(record.info?.get('frame')["line"]);
 
-                if (bkptnum===0){
-                  this.breakpoints.set(fileName, breakpointIDs);
-                  reason='entry'
-                }              
-              }
-              var openPath = vscode.Uri.file(fileName);
-              
-              vscode.workspace.openTextDocument(openPath).then(doc => 
-              {
-                  vscode.window.showTextDocument(doc).then(editor => 
-                  {
-                    let range = editor.document.lineAt(line-1).range;
-                    editor.selection =  new vscode.Selection(range.start, range.end);
-                    editor.revealRange(range);
-                  });
+              //open file and line
+              var openPath = vscode.Uri.file(fullName); 
+              vscode.workspace.openTextDocument(openPath).then(doc => {
+                vscode.window.showTextDocument(doc).then(editor => {
+                  let range = editor.document.lineAt(line-1).range;
+                  editor.selection =  new vscode.Selection(range.start, range.end);
+                  editor.revealRange(range);
+                });
               });
 
               //FIX: hard coded 1 thread- will add task to fix
@@ -232,9 +225,8 @@ export class GDB4HPC extends EventEmitter {
       if (!this.appRunning) {
         resolve(true);
       } else {
-        this.sendCommand(`-exec-interrupt`).then(() => {
-          resolve(true);
-        });
+        //add -exec-interupt to gdb4hpc
+        resolve(false)
       }
     });
   }
@@ -243,35 +235,22 @@ export class GDB4HPC extends EventEmitter {
     return this.sendCommand('-gdb-exit');
   }
 
-  public clearBreakpoints(fileName: string): Promise<boolean> {
-    return new Promise(resolve => {
-      const breakpoints = this.breakpoints.get(fileName);
-      if (breakpoints) {
-        breakpoints.forEach((breakpoint: number) => {
-          this.sendCommand(`-break-delete ${breakpoint}`);
-        });
-        this.breakpoints.delete(fileName);
-      }
-      resolve(true); 
-    });
-  }
-
   public getThreads(): Promise<Thread[]> {
+    const threads: Thread[] = [];
     return new Promise(resolve => {
       this.sendCommand('-thread-info').then((record: Record) => {
-        const threadsResult: Thread[] = [];
-        if (record.getInfo('msgs')){
-          record.getInfo('msgs').forEach((message:any)=>{
-            message['threads'].forEach((thread: any) => {
-              threadsResult.push(new Thread(parseInt(thread.id), thread.name));
+        if (record.info?.get('msgs')){
+          record.info?.get('msgs').forEach((message:any)=>{
+            message['threads'].forEach((thread) => {
+              threads.push(new Thread(parseInt(thread.id), thread.name));
             });
           })  
-        }else if (record.getInfo('threads')) {
-          record.getInfo('threads').forEach((thread: any) => {
-            threadsResult.push(new Thread(parseInt(thread.id), thread.name));
+        }else if (record.info?.get('threads')) {
+          record.info?.get('threads').forEach((thread: any) => {
+            threads.push(new Thread(parseInt(thread.id), thread.name));
           });
         }
-        resolve(threadsResult);
+        resolve(threads);
       });
     });
   }
@@ -311,31 +290,29 @@ export class GDB4HPC extends EventEmitter {
   //send var-create command to gdb4hpc and retreive output
   private createVariable(name: string): Promise<DbgVar> {
     return new Promise(resolve => {
-      this.sendCommand(`-var-create - * "${name}"`).then(
-        recordVariable => {
-          const childCount = parseInt(recordVariable.getInfo('numchild')) || parseInt(recordVariable.getInfo('has_more')) || 0;
-          let variables_match = this.parseVariableRecord(recordVariable.getInfo('value'));
-          
-          //create an array of values from mi message          
-          let vals:any[]=[];
-          variables_match.forEach(variable=>{
-            vals.push({'procset':variable['procset'],'group':variable['group'],'value':variable['value']})
-          });
+      this.sendCommand(`-var-create - * "${name}"`).then((recordVariable) => {
+        let variables_match = this.parseVariableRecord(recordVariable.info!.get('value'));
+        const numchild = parseInt(recordVariable.info!.get('numchild')) || parseInt(recordVariable.info!.get('has_more')) || 0;
+        //create an array of values from mi message          
+        
+        let vals:any[]=[];
+        variables_match.forEach(variable=>{
+          vals.push({'procset':variable['procset'],'group':variable['group'],'value':variable['value']})
+        });
 
-          //create a new variable with all of the variations of values in one variable
-          const newVariable: DbgVar = {
-            name: name,
-            referenceName: recordVariable.getInfo('name'),
-            numberOfChildren: childCount,
-            referenceID: childCount ? this.variables.length + 1 : 0, 
-            type: recordVariable.getInfo('type'),
-            values: vals
-          };
+        //create a new variable with all of the variations of values in one variable
+        const newVariable: DbgVar = {
+          name: name,
+          referenceName: recordVariable.info!.get('name'),
+          childNum: numchild,
+          referenceID: numchild ? this.variables.length + 1 : 0, 
+          type: recordVariable.info!.get('type'),
+          values: vals
+        };
 
-          this.variables.push(newVariable);
-          resolve(newVariable);
-        }
-      );
+        this.variables.push(newVariable);
+        resolve(newVariable);
+      });
     });
   }
   
@@ -343,7 +320,7 @@ export class GDB4HPC extends EventEmitter {
   private updateVariables(): Promise<DbgVar[]> {
     return new Promise(resolve => {
       this.sendCommand(`-var-update --all-values *`).then((record:Record)=> {
-        record.getInfo('changelist').forEach(variableRecord => {
+        record.info?.get('changelist').forEach(variableRecord => {
 
           //get saved variable and update it
           let variable = this.findVariable(variableRecord.name);
@@ -387,7 +364,7 @@ export class GDB4HPC extends EventEmitter {
 
         if(val.value){
           let name = variable.name+"("+val.procset+"{"+val.group+"})"
-          const v: DebugProtocol.Variable = new Variable(name, val.value, variable.numberOfChildren ? variable.referenceID : 0, variable.referenceID);
+          const v: DebugProtocol.Variable = new Variable(name, val.value, variable.childNum ? variable.referenceID : 0, variable.referenceID);
           v.variablesReference = variable.referenceID;
           v.type = variable.type;
           variables.push(v);
@@ -403,7 +380,7 @@ export class GDB4HPC extends EventEmitter {
       this.sendCommand(`-stack-list-variables`).then((record: Record) => {
         const pending: Promise<DbgVar>[] = [];
 
-        record.getInfo('variables').forEach(variable => {
+        record.info?.get('variables').forEach(variable => {
           if (!this.findVariable(variable.name)){
             pending.push(this.createVariable(variable.name));
           }
@@ -424,53 +401,67 @@ export class GDB4HPC extends EventEmitter {
 
   public stack(startFrame: number, endFrame: number): Promise<DebugProtocol.StackFrame[]> {
     return new Promise(resolve => {
-      this.sendCommand(`-stack-list-frames`).then(
-        (record: Record) => {
-          const stackFinal: DebugProtocol.StackFrame[] = [];
-          let stack = record.getInfo('stack');
-          for (let i = startFrame; i < Math.min(endFrame, stack.length); i++) {
-            let frame = stack[i].frame;
-            const sf: DebugProtocol.StackFrame = new StackFrame(i,frame.func,new Source(frame.file? frame.file: '??',frame.fullname),parseInt(frame.line));
-            sf.instructionPointerReference = frame.addr;
-            stackFinal.push(sf);
-          }
-          resolve(stackFinal);
-        })
-      });
+      this.sendCommand(`-stack-list-frames`).then((record: Record) => {
+        const stackFrame: DebugProtocol.StackFrame[] = [];
+        let stack = record.info?.get('stack');
+        for (let i = startFrame; i < Math.min(endFrame, stack.length); i++) {
+          let frame = stack[i].frame;
+          const sf: DebugProtocol.StackFrame = new StackFrame(i,frame.func,new Source(frame.file,frame.fullname),parseInt(frame.line));
+          sf.instructionPointerReference = frame.addr;
+          stackFrame.push(sf);
+        }
+        resolve(stackFrame);
+      })
+    });
 	}
 
-  public setBreakpoints(fileName: string, breakpoints: DebugProtocol.SourceBreakpoint[]): Promise<Breakpoint[]> {
-    return new Promise(resolve => {
-    //gdb4hpc needs to be connected and ready before breakpoints can be set
-      if (this.gdb4hpcReady) {
-        this.clearBreakpoints(fileName).then(() => {
-          const breakpointsPending: Promise<void>[] = [];
-          const breakpointsConfirmed: Breakpoint[] = [];
-          const breakpointIDs: number[] = [];
+  public setBreakpoints(file: string, breakpoints: DebugProtocol.SourceBreakpoint[]): Promise<Breakpoint[]> {
+    const pending: Promise<boolean>[] = [];
+    const bkpts: Breakpoint[] = [];
+    const bkptnums: number[] = [];
+    
+    //SetBreakpointRequest clears all breakpoints
+    const clearBkpts = (file: string): Promise<boolean>=>{
+      return new Promise(resolve => {
+        this.breakpoints.get(file)?.forEach((breakpoint) => {
+          this.sendCommand(`-break-delete ${breakpoint}`);
+        });
+        this.breakpoints.delete(file);
+        resolve(true); 
+      });
+    }
 
-          breakpoints.forEach(srcBreakpoint => {
-            breakpointsPending.push(
-              this.sendCommand(`-break-insert ${fileName}:${srcBreakpoint.line}`).then((breakpoint: Record) => {
-                const bkpt = breakpoint.getInfo('bkpt');
-                if (!bkpt){
-                  return;
-                }
-                breakpointsConfirmed.push(new Breakpoint(!bkpt.pending, bkpt.line));
-                breakpointIDs.push(parseInt(bkpt.number));
-              })
-            );
+    //Send Command to insert new breakpoint
+    const insertBkpt = (file: string, line: number): Promise<boolean>=>{
+      return new Promise(resolve => {
+        this.sendCommand(`-break-insert ${file}:${line}`).then((breakpoint: Record) => {
+          const bkpt = breakpoint.info!.get('bkpt');
+          if (!bkpt) return;
+          bkptnums.push(parseInt(bkpt.number));
+          bkpts.push(new Breakpoint(true, bkpt.line))
+          resolve(true)
+        });
+      });
+    }
+
+    return new Promise(resolve => {
+      //gdb4hpc needs to be connected and ready before breakpoints can be set
+      if (this.gdb4hpcReady) {
+        clearBkpts(file).then(() => {
+          breakpoints.forEach(srcBkpt => {
+            pending.push(insertBkpt(file, srcBkpt.line));
           });
 
-          Promise.all(breakpointsPending).then(() => {
-            this.breakpoints.set(fileName, breakpointIDs);
-            resolve(breakpointsConfirmed);
+          Promise.all(pending).then(() => {
+            this.breakpoints.set(file, bkptnums);
+            resolve(bkpts);
           });
         });
       } else {
         const intv = setInterval(() => {
           if (!this.appRunning) {
             clearInterval(intv);
-            this.setBreakpoints(fileName, breakpoints).then(bps =>resolve(bps));
+            this.setBreakpoints(file, breakpoints).then(bps =>resolve(bps));
           }
         }, 500);
       }
@@ -488,7 +479,7 @@ export class GDB4HPC extends EventEmitter {
   public getProcsetList(): Promise<Procset[]> {
     return new Promise(resolve => {
       this.sendCommand(`-procset-list`).then((record: Record) => {
-        record.getInfo('pe_sets').forEach(set =>{
+        record.info?.get('pe_sets').forEach(set =>{
           if (!pe_list.some(pe => pe.name === set.name)){
             pe_list.push(new Procset(set['name'], set['proc_set']))
           }
@@ -501,7 +492,7 @@ export class GDB4HPC extends EventEmitter {
   public changeFocus(pe_name: string): Promise<boolean> {
     return new Promise(resolve => {
       this.sendCommand(`-procset-focus $${pe_name}`).then((record: Record) => {
-        let name = record.getInfo('focus')['name'];
+        let name = record.info?.get('focus')['name'];
         let found = false;
         pe_list.forEach((pe)=>{
           if (pe.name == name){
@@ -528,32 +519,32 @@ export class GDB4HPC extends EventEmitter {
       let cmds = new_decomp.join("\n");
       this.sendCommand(cmds);
       this.sendCommand(`-decomposition-list`).then((record: Record)=>{
-        let decomps = record.getInfo("decompositions");
+        let decomps = record.info?.get("decompositions");
         resolve(decomps);
       });      
     });
   }
 
-  private runComparison(comparison: any): Promise<boolean> {
-    return new Promise(resolve => {
-      this.sendCommand(`-compare ${comparison.text}`).then((record: Record) => {
-        if(record.getReason()=="error"){
-          vscode.window.showErrorMessage(record.getInfo('msg'));
-        }else{
-          comparison.result = record.getInfo("compare")["result"];
-          comparison.result=comparison.result.replace(/\\n/g, "\n");
-        }
-      })
-      resolve(true)
-    });
-  }
-
   public runComparisons(): Promise<any> {
+    const runComparison = (comparison: any): Promise<boolean> => {
+      return new Promise(resolve => {
+        this.sendCommand(`-compare ${comparison.text}`).then((record: Record) => {
+          if(record.reason =="error"){
+            vscode.window.showErrorMessage(record.info?.get('msg'));
+          }else{
+            comparison.result = record.info?.get("compare")["result"];
+            comparison.result=comparison.result.replace(/\\n/g, "\n");
+          }
+          resolve(true)
+        })
+      });
+    }
+
     return new Promise(resolve => {
       let pending: Promise<boolean>[] = [];
       compare_list.forEach( (comparison)=>{
         if (comparison.checked){
-          pending.push(this.runComparison(comparison))
+          pending.push(runComparison(comparison))
         }else{
           comparison.result ="";
         }
@@ -576,7 +567,7 @@ export class GDB4HPC extends EventEmitter {
         cmds.push(`assert ${assert.str}`);
       })
       cmds.push(`end`);
-      this.sendCommand(cmds.join("\n")).then((record: Record) => {
+      this.sendCommand(cmds.join("\n")).then(() => {
         resolve(true);
       });
       
@@ -594,7 +585,7 @@ export class GDB4HPC extends EventEmitter {
   public getAssertionResults(script: any): Promise<boolean> {
     return new Promise(resolve => {
       this.sendCommand(`-script-list $${script.name} results`).then((record: Record) => {
-        let assert_results = record.getInfo("script_result")["assertions"];
+        let assert_results = record.info?.get("script_result")["assertions"];
         assert_results.forEach((assert, i)=>{
           let updated = script.asserts[i]
           updated["pass"] = assert.pass;
