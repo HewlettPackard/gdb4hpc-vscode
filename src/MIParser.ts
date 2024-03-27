@@ -1,43 +1,11 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
-export class Record {
-  private readonly recStr: string = '';
-  private readonly token: number;
-  private readonly type: string = '';
-  private readonly reason: string;  
-  private info: Map<string, any>;
-
-  public constructor(token: number, type: string, reason: string, recStr: string) {
-    this.token = token;
-    this.type = type;
-    this.reason = reason;
-    this.recStr = recStr;
-    this.info = new Map();
-  }
-
-  public getToken() {
-    return this.token;
-  }
-
-  public getType() {
-    return this.type;
-  }
-
-  public getReason() {
-    return this.reason;
-  }
-
-  public addInfo(result: any) {
-    this.info.set(Object.keys(result)[0],Object.values(result)[0]);
-  }
-
-  public getInfo(key: string): any {
-    return this.info.get(key);
-  }
-
-  public printRecord(): string {
-    return this.recStr;
-  }
+export interface Record {
+  readonly recStr: string
+  readonly token: number|typeof NaN;
+  readonly type: string
+  readonly reason: string;  
+  readonly info?: Map<string, any>;
 }
 
 export class MIParser {
@@ -49,25 +17,25 @@ export class MIParser {
     // captures (token)(type of message)   (message reason or full stream message)
     let regex = /(\d*)?(\*|~|\^|@)((?:(?<=\*)[\w\-]*)|(?:(?<=\^)done|running|connected|error|exit?)|(?:(?<=\~|@)\".*?\s*\"$))/;
     if(this.buffer.startsWith("mi: ")){
-      return new Record(NaN, "mi", "", this.buffer.split("mi: ")[1]);
+      return {token:NaN, type:"mi", reason:"", recStr:this.buffer.split("mi: ")[1]}
     }else if ((match = regex.exec(this.buffer))) {
       let token = match[1]!=''?parseInt(match[1]):NaN;
       if (match[2]=='~'||match[2]=='@'){
         //Stream message - remove the opening and closing quotes and any newlines
         let recStr = match[3].substring(1,match[3].length-1);
         recStr = recStr.replace(/^\\n+|\\n+$/g, '').trim();
-        return new Record(token, match[2], "", recStr);
+        return {token:token, type:match[2], reason:"", recStr:recStr};
       }else if (match[2]=='^'||match[2]=='*'){
-        const record = new Record(token,match[2], match[3], this.buffer)
+        let info = new Map();
         this.buffer = this.buffer.split(match[0])[1];
         this.buffer = this.buffer.substring(1);
         const results = this.parseVar();
         if (results.length!==0){
           results.forEach((result)=>{
-            result?record.addInfo(result):null;
+            result?info.set(Object.keys(result)[0],Object.values(result)[0]):null;
           })
         }
-        return record;
+        return {token:token,type:match[2], reason:match[3], recStr:this.buffer, info:info};
       }
     }
     return null;
