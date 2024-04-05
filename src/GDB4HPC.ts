@@ -22,6 +22,13 @@ export interface DbgVar {
   values: any[];
 }
 
+export interface DbgThread{
+  procset: string;
+  group: number[];
+  id: number;
+  name: string;
+}
+
 export class GDB4HPC extends EventEmitter {
   private cwd: string;
   private apps: any;
@@ -38,7 +45,9 @@ export class GDB4HPC extends EventEmitter {
   private parser: MIParser = new MIParser();
   private token = 1;
   private breakpoints = new Map<string, number[]>();
+  private threads: DbgThread[]=[];
   private variables: DbgVar[]=[];
+  private focused:{procset:string,group:number[]}={procset:"",group:[]}
 
   public spawn(args: ILaunchRequestArguments): void {
     this.cwd = args.cwd || '';
@@ -55,8 +64,12 @@ export class GDB4HPC extends EventEmitter {
 
   public launchApps():  Promise<boolean> {
     return new Promise(resolve => {
+      //for now this should only be one
       this.apps.forEach(app=>{
         this.sendCommand(`launch $`+ app.procset + ` ` + app.program + ` ` + app.args);
+        let split = app.procset.split(/\{|\}/)
+        let group = "0.."+(parseInt(split[1])-1).toString();
+        this.updateFocus(split[0],group);
       });
       resolve(true); 
     });
@@ -187,24 +200,43 @@ export class GDB4HPC extends EventEmitter {
                   editor.revealRange(range);
                 });
               });
-
-              //FIX: hard coded 1 thread- will add task to fix
-              this.emit(reason, 1);
               break;
 
             case 'exited-normally':
               this.sendCommand('-quit');
-              this.emit('exited-normally');
               break;
 
             default:
               console.error('Unknown stop reason');
           }
+          this.emitEvent(reason);
         break;
 
       case 'running':
         this.appRunning = true;
         break;
+    }
+  }
+  private emitEvent(event: string){
+    console.warn("in emitEvent");
+    if(event=='exited-normally'){
+      this.emit('exited-normally')
+    }else if(event=='breakpoint-hit'|| event=='end-stepping-range'){
+      if (this.threads&&this.threads.length>0){
+        console.warn("in if")
+        this.threads.forEach ((thread, index)=>{
+          let a = this.checkSubset(this.focused.group,thread.group);
+          console.warn(a)
+          if (this.focused.procset == thread.procset && a){
+            this.emit(event,index+1);
+          }
+        });
+      }else{
+        console.warn("in else")
+        for (let i =1; i<=this.focused.group.length; i++){
+          this.emit(event,i);
+        }
+      }
     }
   }
 
@@ -235,22 +267,31 @@ export class GDB4HPC extends EventEmitter {
     return this.sendCommand('-gdb-exit');
   }
 
-  public getThreads(): Promise<Thread[]> {
-    const threads: Thread[] = [];
+  private checkSubset(parentArray, subsetArray):boolean{
+    console.warn("in checkSub")
+    return subsetArray.every((el) => {
+        return parentArray.includes(el)
+    })
+  }
+
+  public getThreads(): Promise<Thread[]> {    
     return new Promise(resolve => {
+      console.warn("get Threads")
       this.sendCommand('-thread-info').then((record: Record) => {
-        if (record.info?.get('msgs')){
-          record.info?.get('msgs').forEach((message:any)=>{
-            message['threads'].forEach((thread) => {
-              threads.push(new Thread(parseInt(thread.id), thread.name));
-            });
-          })  
-        }else if (record.info?.get('threads')) {
-          record.info?.get('threads').forEach((thread: any) => {
-            threads.push(new Thread(parseInt(thread.id), thread.name));
+        this.threads = [];
+        const resultThreads: Thread[] = [];
+        record.info?.get('msgs').forEach((message:any)=>{
+          message['threads'].forEach((thread) => {
+            let new_thread = {procset: message['proc_set'], group: this.getGroupArray(message['group']), id: parseInt(thread.id), name: message['proc_set']+message['group']+": "+parseInt(thread.id)};
+            console.warn(new_thread);
+            this.threads.push(new_thread);
           });
-        }
-        resolve(threads);
+        }) 
+        this.threads.forEach((thread, index)=>{
+          resultThreads.push(new Thread(index+1, thread.name));
+        });
+        console.warn(resultThreads);
+        resolve(resultThreads);
       });
     });
   }
@@ -497,6 +538,8 @@ export class GDB4HPC extends EventEmitter {
         pe_list.forEach((pe)=>{
           if (pe.name == name){
             pe.isSelected = true;
+            let info = record.info?.get('focus')['proc_set'].split(/\{|\}/);
+            this.updateFocus(info[0],info[1])
             found = true;
           }else{
             pe.isSelected = false;
@@ -504,12 +547,35 @@ export class GDB4HPC extends EventEmitter {
           pe.updateLabel();
         })
         //trigger window refresh
-        this.emit('end-stepping-range', 1);
+        this.emitEvent('end-stepping-range');
         resolve(found);
       })
     });
 	}
+  private getGroupArray(group:string):number[]{
+    let g: number[] =[];
+    group = group.replace(/\{|\}/g, '')
+    console.warn("in get group array")
+    console.warn(group)
+    group.split(',').forEach((item)=>{
+      if (item.includes("..")){
+        const [min,max]=item.split("..");
+        for (var i = parseInt(min); i <= parseInt(max); i++) {
+          g.push(i);
+       }
+      }else{
+        g.push(parseInt(item))
+      }
+    })
+    console.warn(g);
+    return g;
+  }
 
+  private updateFocus(procset: string, group: string): void{
+    console.warn("updating focus")
+    this.focused.procset=procset;
+    this.focused.group = this.getGroupArray(group);
+  }
   public buildDecomposition(new_decomp: any): Promise<any> {
     return new Promise(resolve => {
       if (new_decomp.length == 0){

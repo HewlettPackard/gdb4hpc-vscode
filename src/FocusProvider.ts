@@ -17,7 +17,7 @@ export class FocusProvider implements vscode.TreeDataProvider<Procset> {
   }
 
   changeFocus(session: any, pe_name:string): void {    
-    session.gdb4hpc.changeFocus(pe_name);
+    session.gdb4hpc.changeFocus(pe_name).then(()=> this.refresh(session));
     this._onDidChangeTreeData.fire();
   }
 

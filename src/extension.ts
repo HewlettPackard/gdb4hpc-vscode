@@ -56,7 +56,6 @@ export function activate(context: vscode.ExtensionContext) {
   //Add Focus Panel to sidebar
   let focusProvider = new FocusProvider();
   vscode.window.registerTreeDataProvider('focus', focusProvider);
-  vscode.commands.registerCommand('focus.refreshEntry', () => {focusProvider.refresh(session)});
   vscode.commands.registerCommand('focus.addEntry', () => {focusProvider.addPe(session)});
   vscode.commands.registerCommand('focus.selectEntry', (entry: Procset) => {focusProvider.changeFocus(session,entry.name)});
 
@@ -80,9 +79,7 @@ export function activate(context: vscode.ExtensionContext) {
   
   //get events from providers
   context.subscriptions.push(vscode.debug.onDidReceiveDebugSessionCustomEvent((e) => {
-    if (e.event == "refreshPeEvent"){
-      focusProvider.refresh(session);
-    }else if(e.event == "changeFocus"){
+    if(e.event == "changeFocus"){
       focusProvider.changeFocus(session,"all");
     }
   }));    
