@@ -1,10 +1,8 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import {DebugProtocol} from '@vscode/debugprotocol';
-import {
-  ContinuedEvent, InitializedEvent, LoggingDebugSession, OutputEvent, Scope, Handles,
-  StackFrame,StoppedEvent,InvalidatedEvent,TerminatedEvent,Thread, Variable
-} from '@vscode/debugadapter';
+import { InitializedEvent, LoggingDebugSession, OutputEvent, Scope, Handles,
+  StackFrame,StoppedEvent,InvalidatedEvent,TerminatedEvent,Thread, Variable} from '@vscode/debugadapter';
 import { Subject } from 'await-notify';
 import { GDB4HPC } from './GDB4HPC';
 
@@ -150,32 +148,18 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   private bindDebuggerEvents(): void {
-    const changeFocusEvent = { event: "changeFocus", body: ["all"] } as DebugProtocol.Event;
-    const refreshPeEvent = { event: "refreshPeEvent", body: [""] } as DebugProtocol.Event;
     this.gdb4hpc.on('output', (text) => {
       const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`, 'console');
       this.sendEvent(e);
     });
 
-    this.gdb4hpc.on('running', (threadID: number, allThreads: boolean) => {
-      this.sendEvent(new ContinuedEvent(threadID, allThreads));
-    });
-
     this.gdb4hpc.on('breakpoint-hit', (threadID: number) => {
       this.sendEvent(new InvalidatedEvent(['variables']));
       this.sendEvent(new StoppedEvent('breakpoint', threadID));
-      this.sendEvent(refreshPeEvent);
-    });
-
-    this.gdb4hpc.on('entry', (threadID: number) => {
-      this.sendEvent(new StoppedEvent('entry',threadID));
-      this.sendEvent(refreshPeEvent);
-      this.sendEvent(changeFocusEvent);
     });
 
     this.gdb4hpc.on('end-stepping-range', (threadID: number) => {
       this.sendEvent(new StoppedEvent('step', threadID));
-      this.sendEvent(refreshPeEvent);
     });
 
     this.gdb4hpc.on('exited-normally', () => {
