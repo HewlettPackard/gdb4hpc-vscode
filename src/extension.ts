@@ -5,7 +5,7 @@
 import * as vscode from 'vscode';
 import {WorkspaceFolder,DebugConfiguration,CancellationToken,ProviderResult} from 'vscode';
 import {DebugSession} from './DebugSession';
-import { Procset, FocusProvider} from './FocusProvider';
+import { FocusProvider} from './FocusProvider';
 import { CompareProvider } from './CompareProvider';
 import { AssertionProvider } from './AssertionProvider';
 import { DecompositionProvider } from './DecompostionProvider';
@@ -54,10 +54,9 @@ export function activate(context: vscode.ExtensionContext) {
   let session = factory.getSession();
   
   //Add Focus Panel to sidebar
-  let focusProvider = new FocusProvider();
-  vscode.window.registerTreeDataProvider('focus', focusProvider);
-  vscode.commands.registerCommand('focus.addEntry', () => {focusProvider.addPe(session)});
-  vscode.commands.registerCommand('focus.selectEntry', (entry: Procset) => {focusProvider.changeFocus(session,entry.name)});
+  let focusProvider = new FocusProvider(context.extensionUri, session);
+  vscode.window.registerWebviewViewProvider('focusView', focusProvider);
+  vscode.commands.registerCommand('focusView.addEntry', () => {focusProvider.addPe()});
 
   //Add decomposition panel to sidebar
   let decompositionProvider = new DecompositionProvider(context.extensionUri, session);
@@ -79,8 +78,8 @@ export function activate(context: vscode.ExtensionContext) {
   
   //get events from providers
   context.subscriptions.push(vscode.debug.onDidReceiveDebugSessionCustomEvent((e) => {
-    if(e.event == "changeFocus"){
-      focusProvider.changeFocus(session,"all");
+    if(e.event == "refreshFocus"){
+      focusProvider.refresh();
     }
   }));    
   

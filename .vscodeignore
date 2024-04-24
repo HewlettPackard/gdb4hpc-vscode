@@ -9,6 +9,7 @@ src
 !src/assertionScript.js
 !src/compareScript.js
 !src/decompositionScript.js
+!src/focusScript.js
 
 out
 .vscode

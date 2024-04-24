@@ -61,7 +61,8 @@
     "views": {
       "debug": [
         {
-          "id": "focus",
+          "type": "webview",
+          "id": "focusView",
           "name": "Focus",
           "contextualTitle": "Focus"
         },
@@ -165,16 +166,8 @@
     ],
     "commands": [
       {
-        "command": "focus.refreshEntry",
-        "title": "Refresh"
-      },
-      {
-        "command": "focus.addEntry",
+        "command": "focusView.addEntry",
         "title": "Add"
-      },
-      {
-        "command": "focus.selectEntry",
-        "title": "Select"
       },
       {
         "command": "decompView.addEntry",
@@ -204,13 +197,8 @@
     "menus": {
       "view/title": [
         {
-          "command": "focus.refreshEntry",
-          "when": "view == focus",
-          "group": "navigation"
-        },
-        {
-          "command": "focus.addEntry",
-          "when": "view == focus",
+          "command": "focusView.addEntry",
+          "when": "view == focusView",
           "group": "navigation"
         },
         {
@@ -242,12 +230,6 @@
           "command": "assertView.getInfo",
           "when": "view == assertView",
           "group": "navigation"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "focus.selectEntry",
-          "group": "inline"
         }
       ]
     }

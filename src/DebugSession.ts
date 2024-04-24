@@ -25,7 +25,31 @@ export class DebugSession extends LoggingDebugSession {
   protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments) {
 
     this.gdb4hpc = new GDB4HPC();
-    this.bindDebuggerEvents();
+    const refreshFocusEvent = { event: "refreshFocus"} as DebugProtocol.Event;
+
+    this.gdb4hpc.on('refreshFocus', ()=>{
+      this.sendEvent(refreshFocusEvent);
+    });
+    
+    this.gdb4hpc.on('output', (text) => {
+      const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`, 'console');
+      this.sendEvent(e);
+    });
+
+    this.gdb4hpc.on('breakpoint-hit', (threadID: number) => {
+      this.sendEvent(new InvalidatedEvent(['variables']));
+      this.sendEvent(new StoppedEvent('breakpoint', threadID));
+      this.sendEvent(refreshFocusEvent);
+    });
+
+    this.gdb4hpc.on('end-stepping-range', (threadID: number) => {
+      this.sendEvent(new StoppedEvent('step', threadID));
+      this.sendEvent(refreshFocusEvent);
+    });
+
+    this.gdb4hpc.on('exited-normally', () => {
+      this.sendEvent(new TerminatedEvent());
+    });
 
 		response.body = response.body || {};
 		response.body.supportsConfigurationDoneRequest = true;
@@ -145,25 +169,5 @@ export class DebugSession extends LoggingDebugSession {
         this.sendResponse(response);
       }
     }
-  }
-
-  private bindDebuggerEvents(): void {
-    this.gdb4hpc.on('output', (text) => {
-      const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`, 'console');
-      this.sendEvent(e);
-    });
-
-    this.gdb4hpc.on('breakpoint-hit', (threadID: number) => {
-      this.sendEvent(new InvalidatedEvent(['variables']));
-      this.sendEvent(new StoppedEvent('breakpoint', threadID));
-    });
-
-    this.gdb4hpc.on('end-stepping-range', (threadID: number) => {
-      this.sendEvent(new StoppedEvent('step', threadID));
-    });
-
-    this.gdb4hpc.on('exited-normally', () => {
-      this.sendEvent(new TerminatedEvent());
-    });
   }
 }
