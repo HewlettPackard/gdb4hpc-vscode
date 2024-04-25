@@ -1,27 +1,43 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
-import { pe_list } from './GDB4HPC';
 
-export class FocusProvider implements vscode.TreeDataProvider<Procset> {
+export class FocusProvider implements vscode.WebviewViewProvider {
   
-  constructor() {
-  }
+  public static readonly viewType = 'focusView';
 
-  private _onDidChangeTreeData: vscode.EventEmitter<Procset | undefined | null | void> = new vscode.EventEmitter<Procset | undefined | null | void>();
-  readonly onDidChangeTreeData: vscode.Event<Procset | undefined | null | void> = this._onDidChangeTreeData.event;
+	public _view: vscode.WebviewView;
 
-  refresh(session: any): void {
-    session.gdb4hpc.getProcsetList();
-    this._onDidChangeTreeData.fire();
-  }
+	constructor(
+		private readonly _extensionUri: vscode.Uri,
+		private readonly session: any
+	) {	}
 
-  changeFocus(session: any, pe_name:string): void {    
-    session.gdb4hpc.changeFocus(pe_name).then(()=> this.refresh(session));
-    this._onDidChangeTreeData.fire();
-  }
+	public resolveWebviewView(webviewView: vscode.WebviewView,context: vscode.WebviewViewResolveContext,_token: vscode.CancellationToken) {
+		this._view = webviewView || null;
 
-  addPe(session: any): void {
+		this._view.webview.options = {
+			// Allow scripts in the webview
+			enableScripts: true,
+
+			localResourceRoots: [
+				this._extensionUri
+			]
+		};
+
+		this._view.webview.onDidReceiveMessage( message => {
+      switch (message.command) {
+        case 'toggledFocus':
+					this.session.gdb4hpc.changeFocus(message.id).then(this.refresh());
+					break;
+      }
+    })		
+
+		//reference to display of panel
+		this._view.webview.html = this._getHtmlForWebview(this._view.webview);	
+	}
+
+	addPe(): void {
     let input_name_box: vscode.InputBoxOptions = {
       prompt: "Name for new PE ",
       placeHolder: "abc"
@@ -42,50 +58,59 @@ export class FocusProvider implements vscode.TreeDataProvider<Procset> {
       vscode.window.showInputBox(input_procset_box).then(value => {
         if (!value) return;
         procset = value;
-        session.gdb4hpc.addProcset(name, procset).then(()=> this.refresh(session))
+        this.session.gdb4hpc.addProcset(name, procset).then(this.refresh())
       });
     });    
   }
 
-  getTreeItem(element: Procset): vscode.TreeItem {
-    return element;
+	refresh(): void {
+    this.session.gdb4hpc.getProcsetList().then((a)=> {
+			console.warn(a)
+			this._view?.webview.postMessage({type:'focusUpdated', value: a})
+		});
   }
 
-  getChildren(element?: Procset): Thenable<Procset[]> {
-    if (!pe_list) {
-      vscode.window.showInformationMessage('No pe list available');
-      return Promise.resolve([]);
-    }
+	private _getHtmlForWebview(webview: vscode.Webview) {
+		//references to style sheets for vscode styling
+		const styleResetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'reset.css'));
+		const styleVSCodeUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'vscode.css'));
 
-    return Promise.resolve(pe_list);
-  }
+		//reference to script used by assertion display
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'src', 'focusScript.js'));
 
-}
+		//security policy reference
+		function getNonce() {
+			let text = '';
+			const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+			for (let i = 0; i < 32; i++) {
+				text += possible.charAt(Math.floor(Math.random() * possible.length));
+			}
+			return text;
+		}
 
-export class Procset extends vscode.TreeItem {
-  isSelected: boolean = false;
-  constructor(
-    public readonly name: string,
-    public readonly procset: string
-  ) {
-    super(name);
-    this.tooltip = `${this.name}`
-    this.isSelected = false;
-    this.label = `  ${this.name}`
-    this.description = `${this.procset}`
-  }
+		const nonce = getNonce();
 
-  iconPath = {
-    light: `${this.label}`,
-    dark: `${this.label}`
-  };
+		return `<!DOCTYPE html>
+    <html lang="en">
+    <head>
+				<meta charset="UTF-8">
 
-  updateLabel(){
-    if(this.isSelected){
-      this.label = `* ${this.name}`;
-    }
-    else{
-      this.label = `  ${this.name}`;
-    }
-  }
+				<!--
+					Use a content security policy to only allow loading styles from our extension directory,
+					and only allow scripts that have a specific nonce.
+					(See the 'webview-sample' extension sample for img-src content security policy examples)
+				-->
+				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+
+				<meta name="viewport" content="width=device-width, initial-scale=1.0">
+				<link href="${styleResetUri}" rel="stylesheet">
+				<link href="${styleVSCodeUri}" rel="stylesheet">
+    </head>
+    <body>
+				<ul id='focus-list'>
+				</ul>
+				<script nonce="${nonce}" src="${scriptUri}"></script>
+		</body>
+    </html>`;
+	}
 }
