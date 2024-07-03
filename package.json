@@ -54,6 +54,16 @@
     "request": "never"
   },
   "contributes": {
+    "languages":[
+      {
+        "id": "fortran",
+        "extensions": [
+          ".f90",
+          ".F90"
+        ],
+        "configuration": "./fortran-language-configuration.json"
+      }
+    ],
     "configuration": {
       "title": "GDB4HPC",
       "properties": {}
@@ -92,6 +102,9 @@
       },
       {
         "language": "c"
+      },
+      {
+        "language": "fortran"
       }
     ],
     "debuggers": [
@@ -102,7 +115,8 @@
         "runtime": "node",
         "languages": [
           "c",
-          "cpp"
+          "cpp",
+          "fortran"
         ],
         "configurationAttributes": {
           "launch": {
