@@ -256,6 +256,10 @@ export class GDB4HPC extends EventEmitter {
     return this.sendCommand(`-exec-step`);
   }
 
+  public stepOut(): Promise<any> {
+    return this.sendCommand(`-exec-finish`);
+  }
+
   public next(): Promise<any> {
     return this.sendCommand(`-exec-next`);
   }
