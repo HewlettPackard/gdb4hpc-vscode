@@ -260,15 +260,8 @@ export class GDB4HPC extends EventEmitter {
     return this.sendCommand(`-exec-next`);
   }
 
-  public pause(): Promise<boolean> {
-    return new Promise(resolve => {
-      if (!this.appRunning) {
-        resolve(true);
-      } else {
-        //add -exec-interupt to gdb4hpc
-        resolve(false)
-      }
-    });
+  public pause(): Promise<any> {
+    return this.sendCommand(`-exec-interrupt`);
   }
 
   public terminate(): Promise<any> {
