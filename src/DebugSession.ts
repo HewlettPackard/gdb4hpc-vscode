@@ -127,6 +127,12 @@ export class DebugSession extends LoggingDebugSession {
     });
   }
 
+  protected stepOutRequest(response: DebugProtocol.StepOutResponse, args: DebugProtocol.StepInArguments): void {
+    this.gdb4hpc.stepOut().then(() => {
+      this.sendResponse(response);
+    });
+  }
+  
   protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
     this.gdb4hpc.continue().then(() => {
       this.sendResponse(response);
