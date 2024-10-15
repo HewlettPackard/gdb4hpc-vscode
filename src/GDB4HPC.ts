@@ -208,6 +208,7 @@ export class GDB4HPC extends EventEmitter {
               vscode.workspace.openTextDocument(openPath).then(doc => {
                 vscode.window.showTextDocument(doc).then(editor => {
                   let range = editor.document.lineAt(line-1).range;
+                  // TODO replace this with a line highlighting style that doesn't steal focus from other windows
                   editor.selection =  new vscode.Selection(range.start, range.end);
                   editor.revealRange(range);
                 });
@@ -480,14 +481,14 @@ export class GDB4HPC extends EventEmitter {
     }
 
     //Send Command to insert new breakpoint
-    const insertBkpt = (file: string, line: number): Promise<boolean>=>{
-      return new Promise(resolve => {
-        this.sendCommand(`-break-insert ${file}:${line}`).then((breakpoint: Record) => {
+    const insertBkpt = (file: string, line: number): Promise<any> =>{
+      // XXX: setting breakpoint pending every time is a hack we have to do until CPE-6345 is implemented
+      return this.sendCommand("-gdb-set breakpoint pending on")
+        .then(() => this.sendCommand(`-break-insert ${file}:${line}`))
+        .then((breakpoint: Record) => {
           const bkpt = breakpoint.info!.get('bkpt');
           if (!bkpt) return;
           this.breakpoints.push({num:parseInt(bkpt.number), bkpt:new Breakpoint(true, bkpt.line),file:file,line:bkpt.line})
-          resolve(true)
-        });
       });
     }
 

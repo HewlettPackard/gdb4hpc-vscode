@@ -167,6 +167,13 @@ export class DebugSession extends LoggingDebugSession {
         });
         //FIX (PE-53410): only sending first rank available back for now as only one reply is able to be sent
         this.sendResponse(response);
+        break;
+      }
+      case 'repl': {
+        // this is where text entered in the debug console ends up. send the command to gdb4hpc.
+        this.gdb4hpc.sendCommand(args.expression);
+        // no need to catch the output, console output events will automatically be caught and routed
+        break;
       }
     }
   }
