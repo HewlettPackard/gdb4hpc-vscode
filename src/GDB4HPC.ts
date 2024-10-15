@@ -208,7 +208,6 @@ export class GDB4HPC extends EventEmitter {
               vscode.workspace.openTextDocument(openPath).then(doc => {
                 vscode.window.showTextDocument(doc).then(editor => {
                   let range = editor.document.lineAt(line-1).range;
-                  // TODO replace this with a line highlighting style that doesn't steal focus from other windows
                   editor.selection =  new vscode.Selection(range.start, range.end);
                   editor.revealRange(range);
                 });
