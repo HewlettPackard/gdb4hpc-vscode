@@ -12,7 +12,7 @@ export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArgu
   cwd: string;
   apps: any[];
   name: string;
-  dbgversion:string;
+  modules:any;
   env: any;
   request: any;
 }

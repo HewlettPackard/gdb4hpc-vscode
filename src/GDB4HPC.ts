@@ -45,7 +45,8 @@ export class GDB4HPC extends EventEmitter {
   private cwd: string;
   private apps: any;
   private environmentVariables: string[];
-  private dbgversion: string;
+  private modulefiles: string[];
+  private modulepath:string;
   private gdb4hpcPty: any;
   private output_panel: vscode.OutputChannel;
   private mi_log: vscode.OutputChannel;
@@ -64,7 +65,8 @@ export class GDB4HPC extends EventEmitter {
     this.cwd = args.cwd || '';
     this.environmentVariables = args.env || [];
     this.apps = args.apps;
-    this.dbgversion = args.dbgversion;
+    this.modulefiles = args.modules.modulefiles
+    this.modulepath = args.modules.modulepath
     this.output_panel = vscode.window.createOutputChannel("Program Output")
     this.mi_log = vscode.window.createOutputChannel("MI Log");
     this.error_log = vscode.window.createOutputChannel("Error Log");
@@ -89,7 +91,7 @@ export class GDB4HPC extends EventEmitter {
 
   private createPty(): Promise<boolean> {
     return new Promise(resolve => {
-      this.gdb4hpcPty = pty.spawn(this.dbgversion, ["--interpreter=mi"], {
+      this.gdb4hpcPty = pty.spawn('bash', [], {
         name: 'xterm-color',
         cols: 80,
         rows: 30,
@@ -109,6 +111,16 @@ export class GDB4HPC extends EventEmitter {
         this.output_panel.dispose();
         this.mi_log.dispose();
       });
+
+      //load in modulefiles
+      if (this.modulepath != ""){
+        console.warn("modulepath not set")
+        this.gdb4hpcPty.write(`module use ${this.modulepath}\n`)
+      }
+      this.modulefiles.forEach(module => {
+        this.gdb4hpcPty.write(`module load ${module}\n`)
+      });
+      this.gdb4hpcPty.write(`gdb4hpc --interpreter=mi\n`)
 
       //gdb4hpc is ready to use
       this.appRunning= true;
@@ -180,14 +192,24 @@ export class GDB4HPC extends EventEmitter {
               
             }else{
               if(record.reason=="error"){
-                vscode.window.showErrorMessage(record.info?.get('msg'))
+                vscode.window.showErrorMessage(record.info?.get('msg'));
                 this.error_log.appendLine(record.info?.get('msg'));
+                this.error_log.show();
               }
             }
             break;
           default:
             break;
         } 
+      }else{
+        if(line.toLowerCase().includes("error")){
+          this.error_log.appendLine(line);
+
+          if (line.toLowerCase().includes("module")){
+            vscode.window.showErrorMessage(line);
+            this.error_log.show();
+          }
+        }
       }
     });
   }
