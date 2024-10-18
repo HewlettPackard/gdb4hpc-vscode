@@ -12,9 +12,14 @@ export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArgu
   cwd: string;
   apps: any[];
   name: string;
-  dbgversion:string;
+  modules:IModule;
   env: any;
   request: any;
+}
+
+export interface IModule {
+  modulefiles: string[];
+  modulepath: string;
 }
 
 export class DebugSession extends LoggingDebugSession {

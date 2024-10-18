@@ -55,7 +55,7 @@
     "request": "never"
   },
   "contributes": {
-    "languages":[
+    "languages": [
       {
         "id": "fortran",
         "extensions": [
@@ -152,10 +152,13 @@
                 "description": "Environment variables to set in debugger shell",
                 "default": {}
               },
-              "dbgversion": {
-                "type": "string",
-                "description": "Path to debugger",
-                "default": "gdb4hpc"
+              "modules": {
+                "type": "object",
+                "description": "Module settings",
+                "default": {
+                  "modulepath":"",
+                  "modulefiles":["gdb4hpc"]
+                }
               }
             }
           }
@@ -165,7 +168,10 @@
             "type": "gdb4hpc",
             "request": "launch",
             "name": "GDB4HPC",
-            "dbgversion": "",
+            "modules": {
+                "modulepath":"",
+                "modulefiles":["gdb4hpc"]
+            },
             "apps": [
               {
                 "procset": "App0{1}",
