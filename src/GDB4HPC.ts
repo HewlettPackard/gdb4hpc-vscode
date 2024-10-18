@@ -32,7 +32,6 @@ export interface DbgBkpt{
   num: number;
   bkpt: Breakpoint;
   file: string;
-  fullfile:string;
   line: string;
 }
 
