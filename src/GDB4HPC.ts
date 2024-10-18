@@ -32,6 +32,7 @@ export interface DbgBkpt{
   num: number;
   bkpt: Breakpoint;
   file: string;
+  fullfile:string;
   line: string;
 }
 
@@ -113,8 +114,7 @@ export class GDB4HPC extends EventEmitter {
       });
 
       //load in modulefiles
-      if (this.modulepath != ""){
-        console.warn("modulepath not set")
+      if (this.modulepath.trim().length>0){
         this.gdb4hpcPty.write(`module use ${this.modulepath}\n`)
       }
       this.modulefiles.forEach(module => {
