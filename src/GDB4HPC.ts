@@ -59,7 +59,7 @@ export class GDB4HPC extends EventEmitter {
   private breakpoints: DbgBkpt[]=[];
   private threads: DbgThread[]=[];
   private variables: DbgVar[]=[];
-  private focused:{procset:string,group:number[]}={procset:"",group:[]}
+  private focused:{name:string,procset:string,group:number[]}={name:"",procset:"",group:[]}
 
   public spawn(args: ILaunchRequestArguments): void {
     this.cwd = args.cwd || '';
@@ -82,6 +82,7 @@ export class GDB4HPC extends EventEmitter {
         this.sendCommand(`launch $`+ app.procset + ` ` + app.program + ` ` + app.args);
         let split = app.procset.split(/\{|\}/)
         let group = "0.."+(parseInt(split[1])-1).toString();
+        this.focused.name="all"
         this.focused.procset=split[0];
         this.focused.group = this.getGroupArray(group);
       });
@@ -534,7 +535,11 @@ export class GDB4HPC extends EventEmitter {
 
   public addProcset(name: string, procset: string): Promise<boolean> {
     return new Promise(resolve => {
-      this.sendCommand(`-procset-define $${name} ${procset}`);
+      this.sendCommand(`-procset-define $${name} $${procset}`);
+      let info = procset.split(/\{|\}/);
+      this.focused.name = name
+      this.focused.procset = info[0];
+      this.focused.group = this.getGroupArray(info[1]);
       resolve(true)
     })
 	}
@@ -542,36 +547,25 @@ export class GDB4HPC extends EventEmitter {
   public getProcsetList(): Promise<Procset[]> {
     return new Promise(resolve => {
       this.sendCommand(`-procset-list`).then((record: Record) => {
+        pe_list = [];
         record.info?.get('pe_sets').forEach(set =>{
-          if (!pe_list.some(pe => pe.name === set.name)){
-            let selected = false;
-            if (set.name == "all") selected = true;
-            pe_list.push({name:set['name'], procset:set['proc_set'],isSelected:selected})
-          }
+          let selected = (set.name == this.focused.name)?true:false;
+          pe_list.push({name:set['name'], procset:set['proc_set'],isSelected:selected})
         })
         resolve(pe_list);
       })  
     });
 	}
 
-  public changeFocus(i: number): Promise<boolean> {
-    let pe_name = pe_list.at(i)?.name;
+  public changeFocus(input: string): Promise<boolean> {
     return new Promise(resolve => {
-      this.sendCommand(`-procset-focus $${pe_name}`).then((record: Record) => {
+      this.sendCommand(`-procset-focus $${input}`).then((record: Record) => {
         let name = record.info?.get('focus')['name'];
-        let found = false;
-        pe_list.forEach((pe)=>{
-          if (pe.name == name){
-            pe.isSelected = true;
-            let info = record.info?.get('focus')['proc_set'].split(/\{|\}/);
-            this.focused.procset=info[0];
-            this.focused.group = this.getGroupArray(info[1]);
-            found = true;
-          }else{
-            pe.isSelected = false;
-          }
-        })
-        resolve(found);
+        let info = record.info?.get('focus')['proc_set'].split(/\{|\}/);
+        this.focused.name = name
+        this.focused.procset = info[0];
+        this.focused.group = this.getGroupArray(info[1]);
+        resolve(true);
       })
     });
 	}

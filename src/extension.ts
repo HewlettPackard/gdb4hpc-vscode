@@ -56,7 +56,6 @@ export function activate(context: vscode.ExtensionContext) {
   //Add Focus Panel to sidebar
   let focusProvider = new FocusProvider(context.extensionUri, session);
   vscode.window.registerWebviewViewProvider('focusView', focusProvider);
-  vscode.commands.registerCommand('focusView.addEntry', () => {focusProvider.addPe()});
 
   //Add decomposition panel to sidebar
   let decompositionProvider = new DecompositionProvider(context.extensionUri, session);

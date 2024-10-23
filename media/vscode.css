@@ -85,10 +85,16 @@ textarea {
 	background-color: var(--vscode-input-background);
 }
 
+input[type='text']{
+	margin-bottom: 5px;
+}
+
 input::placeholder,
 textarea::placeholder {
 	color: var(--vscode-input-placeholderForeground);
 }
+
+
 
 .radio {
 	margin: 0 auto;
