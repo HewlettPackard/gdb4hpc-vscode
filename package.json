@@ -187,10 +187,6 @@
     ],
     "commands": [
       {
-        "command": "focusView.addEntry",
-        "title": "Add"
-      },
-      {
         "command": "decompView.addEntry",
         "title": "Add"
       },
