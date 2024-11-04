@@ -60,10 +60,19 @@ export class GDB4HPC extends EventEmitter {
   private threads: DbgThread[]=[];
   private variables: DbgVar[]=[];
   private focused:{name:string,procset:string,group:number[]}={name:"",procset:"",group:[]}
+  private appendedVars: string[];
 
   public spawn(args: ILaunchRequestArguments): void {
     this.cwd = args.cwd || '';
     this.environmentVariables = args.env || [];
+    this.appendedVars=[];
+    let regex = /\$(\w+)\:([\s\S]*)/;
+    let match: any[]|null;
+    for (const key in args.env) {
+      if ((match = regex.exec(args.env[key]))) {
+        this.appendedVars[key]=match[2]+":"+process.env[match[1]];
+      }
+    }
     this.apps = args.apps;
     this.modulefiles = args.modules.modulefiles
     this.modulepath = args.modules.modulepath
@@ -97,7 +106,7 @@ export class GDB4HPC extends EventEmitter {
         cols: 80,
         rows: 30,
         cwd: this.cwd,
-        env: Object.assign(this.environmentVariables, process.env),
+        env: Object.assign(this.environmentVariables, process.env, this.appendedVars)
       });
       
       this.gdb4hpcPty.onData(data => {
