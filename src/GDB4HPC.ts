@@ -45,8 +45,7 @@ export class GDB4HPC extends EventEmitter {
   private cwd: string;
   private apps: any;
   private environmentVariables: string[];
-  private modulefiles: string[];
-  private modulepath:string;
+  private setupCommands: string[];
   private gdb4hpcPty: any;
   private output_panel: vscode.OutputChannel;
   private mi_log: vscode.OutputChannel;
@@ -74,8 +73,7 @@ export class GDB4HPC extends EventEmitter {
       }
     }
     this.apps = args.apps;
-    this.modulefiles = args.modules.modulefiles
-    this.modulepath = args.modules.modulepath
+    this.setupCommands = args.setupCommands
     this.output_panel = vscode.window.createOutputChannel("Program Output")
     this.mi_log = vscode.window.createOutputChannel("MI Log");
     this.error_log = vscode.window.createOutputChannel("Error Log");
@@ -122,12 +120,8 @@ export class GDB4HPC extends EventEmitter {
         this.mi_log.dispose();
       });
 
-      //load in modulefiles
-      if (this.modulepath.trim().length>0){
-        this.gdb4hpcPty.write(`module use ${this.modulepath}\n`)
-      }
-      this.modulefiles.forEach(module => {
-        this.gdb4hpcPty.write(`module load ${module}\n`)
+      this.setupCommands.forEach(item => {
+        this.gdb4hpcPty.write(`${item}\n`)
       });
       this.gdb4hpcPty.write(`gdb4hpc --interpreter=mi\n`)
 

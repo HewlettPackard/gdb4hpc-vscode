@@ -152,13 +152,10 @@
                 "description": "Environment variables to set in debugger shell",
                 "default": {}
               },
-              "modules": {
-                "type": "object",
-                "description": "Module settings",
-                "default": {
-                  "modulepath":"",
-                  "modulefiles":["gdb4hpc"]
-                }
+              "setupCommands":{
+                "type": "array",
+                "description": "Commands to run in terminal before gdb4hpc starts",
+                "default": [""]
               }
             }
           }
@@ -168,10 +165,7 @@
             "type": "gdb4hpc",
             "request": "launch",
             "name": "GDB4HPC",
-            "modules": {
-                "modulepath":"",
-                "modulefiles":["gdb4hpc"]
-            },
+            "setupCommands": [""],
             "apps": [
               {
                 "procset": "App0{1}",
@@ -213,11 +207,6 @@
     ],
     "menus": {
       "view/title": [
-        {
-          "command": "focusView.addEntry",
-          "when": "view == focusView",
-          "group": "navigation"
-        },
         {
           "command": "decompView.addEntry",
           "when": "view == decompView",
