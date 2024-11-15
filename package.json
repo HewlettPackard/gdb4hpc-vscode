@@ -155,7 +155,7 @@
               "setupCommands":{
                 "type": "array",
                 "description": "Commands to run in terminal before gdb4hpc starts",
-                "default": [""]
+                "default": []
               }
             }
           }
@@ -165,7 +165,7 @@
             "type": "gdb4hpc",
             "request": "launch",
             "name": "GDB4HPC",
-            "setupCommands": [""],
+            "setupCommands": [],
             "apps": [
               {
                 "procset": "App0{1}",

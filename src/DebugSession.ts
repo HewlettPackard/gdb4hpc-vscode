@@ -176,6 +176,10 @@ export class DebugSession extends LoggingDebugSession {
         break;
       }
       case 'repl': {
+        if(!this.gdb4hpc.isStarted()){
+          this.gdb4hpc.writeToPty(args.expression);
+          break;
+        }
         // this is where text entered in the debug console ends up. send the command to gdb4hpc.
         this.gdb4hpc.sendCommand(args.expression);
         // no need to catch the output, console output events will automatically be caught and routed
