@@ -45,8 +45,7 @@ export class GDB4HPC extends EventEmitter {
   private cwd: string;
   private apps: any;
   private environmentVariables: string[];
-  private modulefiles: string[];
-  private modulepath:string;
+  private setupCommands: string[];
   private gdb4hpcPty: any;
   private output_panel: vscode.OutputChannel;
   private mi_log: vscode.OutputChannel;
@@ -61,8 +60,10 @@ export class GDB4HPC extends EventEmitter {
   private variables: DbgVar[]=[];
   private focused:{name:string,procset:string,group:number[]}={name:"",procset:"",group:[]}
   private appendedVars: string[];
+  private started: boolean;
 
   public spawn(args: ILaunchRequestArguments): void {
+    this.started = false;
     this.cwd = args.cwd || '';
     this.environmentVariables = args.env || [];
     this.appendedVars=[];
@@ -74,14 +75,11 @@ export class GDB4HPC extends EventEmitter {
       }
     }
     this.apps = args.apps;
-    this.modulefiles = args.modules.modulefiles
-    this.modulepath = args.modules.modulepath
+    this.setupCommands = args.setupCommands
     this.output_panel = vscode.window.createOutputChannel("Program Output")
     this.mi_log = vscode.window.createOutputChannel("MI Log");
     this.error_log = vscode.window.createOutputChannel("Error Log");
-    this.createPty().then(()=>{
-      this.launchApps().then(()=>{this.emitEvent('entryFocus')});
-    });
+    this.createPty();
   }
 
   public launchApps():  Promise<boolean> {
@@ -94,6 +92,7 @@ export class GDB4HPC extends EventEmitter {
         this.focused.name="all"
         this.focused.procset=split[0];
         this.focused.group = this.getGroupArray(group);
+        this.appRunning= true;
       });
       resolve(true); 
     });
@@ -114,6 +113,14 @@ export class GDB4HPC extends EventEmitter {
         //remove color codes
         data = data.replaceAll("\x1b[0m","");
         data = data.replaceAll("\x1b[30;1m","");
+
+        //check to see gdb4hpc is running, if so launch program
+        if (!this.isStarted() && data.toString().startsWith("mi:")){
+          this.started = true;
+          this.handleOutput(data);
+          this.launchApps().then(()=>{this.emitEvent('entryFocus')});
+          return;
+        }
         this.handleOutput(data);
       });
 
@@ -122,19 +129,27 @@ export class GDB4HPC extends EventEmitter {
         this.mi_log.dispose();
       });
 
-      //load in modulefiles
-      if (this.modulepath.trim().length>0){
-        this.gdb4hpcPty.write(`module use ${this.modulepath}\n`)
+      //if setupCommands are provided, use them to launch gdb4hpc
+      if (this.setupCommands.length>0){
+        this.setupCommands.forEach(item => {
+          this.gdb4hpcPty.write(`${item}\n`)
+        });
+        this.gdb4hpcPty.write(`gdb4hpc --interpreter=mi\n`);
+      }else{
+        vscode.window.showInformationMessage("Please add setupCommands or launch gdb4hpc in the Debug Console")
       }
-      this.modulefiles.forEach(module => {
-        this.gdb4hpcPty.write(`module load ${module}\n`)
-      });
-      this.gdb4hpcPty.write(`gdb4hpc --interpreter=mi\n`)
-
-      //gdb4hpc is ready to use
-      this.appRunning= true;
+   
       resolve(true)
     });
+  }
+
+  //write commands from Debug Console to PTY
+  public writeToPty(command: string){
+    if (command.startsWith("gdb4hpc")){
+      this.gdb4hpcPty.write(`${command} --interpreter=mi\n`);
+    }else{
+      this.gdb4hpcPty.write(`${command}\n`);
+    }
   }
   
   //send command to gdb4hpc and get the parsed output back
@@ -172,6 +187,12 @@ export class GDB4HPC extends EventEmitter {
 
     lines.forEach(line => {
       line = line.trim();
+
+      //if gdb4hpc is not started, show all output in Debug Console
+      if (!this.isStarted()){
+        this.emit('output', line, 'console');
+        return;
+      }
       let record = this.parser.parseRecord(line);
       if(record){
         switch (record.type) {
@@ -213,11 +234,6 @@ export class GDB4HPC extends EventEmitter {
       }else{
         if(line.toLowerCase().includes("error")){
           this.error_log.appendLine(line);
-
-          if (line.toLowerCase().includes("module")){
-            vscode.window.showErrorMessage(line);
-            this.error_log.show();
-          }
         }
       }
     });
@@ -679,5 +695,9 @@ export class GDB4HPC extends EventEmitter {
         resolve(true);
       })
     });
+  }
+
+  public isStarted(): boolean {
+    return this.started;
   }
 }
