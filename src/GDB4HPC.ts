@@ -135,6 +135,8 @@ export class GDB4HPC extends EventEmitter {
           this.gdb4hpcPty.write(`${item}\n`)
         });
         this.gdb4hpcPty.write(`gdb4hpc --interpreter=mi\n`);
+      }else{
+        vscode.window.showInformationMessage("Please add setupCommands or launch gdb4hpc in the Debug Console")
       }
    
       resolve(true)
