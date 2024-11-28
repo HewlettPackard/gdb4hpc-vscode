@@ -1,6 +1,7 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
+import { gdb4hpc } from './extension';
 
 export class FocusProvider implements vscode.WebviewViewProvider {
   
@@ -9,8 +10,7 @@ export class FocusProvider implements vscode.WebviewViewProvider {
 	public _view: vscode.WebviewView;
 
 	constructor(
-		private readonly _extensionUri: vscode.Uri,
-		private readonly session: any
+		private readonly _extensionUri: vscode.Uri
 	) {	}
 
 	public resolveWebviewView(webviewView: vscode.WebviewView,context: vscode.WebviewViewResolveContext,_token: vscode.CancellationToken) {
@@ -28,10 +28,10 @@ export class FocusProvider implements vscode.WebviewViewProvider {
 		this._view.webview.onDidReceiveMessage( message => {
       switch (message.command) {
         case 'selectedFocus':
-					this.session.gdb4hpc.changeFocus(message.procset).then(this.refresh());
+					gdb4hpc.changeFocus(message.procset).then(()=>this.refresh());
 					break;
 				case 'addPe':
-					this.session.gdb4hpc.addProcset(message.name, message.procset).then(this.refresh())
+					gdb4hpc.addProcset(message.name, message.procset).then(()=>this.refresh())
       }
     })		
 
@@ -40,8 +40,7 @@ export class FocusProvider implements vscode.WebviewViewProvider {
 	}
 
 	refresh(): void {
-    this.session.gdb4hpc.getProcsetList().then((a)=> {
-			console.warn(a)
+    gdb4hpc.getProcsetList().then((a)=> {
 			this._view?.webview.postMessage({type:'focusUpdated', value: a})
 		});
   }

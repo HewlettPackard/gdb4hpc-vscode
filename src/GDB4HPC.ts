@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import * as pty from 'node-pty';
 import {clearInterval} from 'timers';
 import { compare_list } from './CompareProvider';
+import { debugSessions } from './extension';
 
 export var pe_list: Procset[] = [];
 
@@ -43,7 +44,7 @@ export interface Procset {
 
 export class GDB4HPC extends EventEmitter {
   private cwd: string;
-  private apps: any;
+  public apps: any;
   private environmentVariables: string[];
   private setupCommands: string[];
   private gdb4hpcPty: any;
@@ -61,6 +62,7 @@ export class GDB4HPC extends EventEmitter {
   private focused:{name:string,procset:string,group:number[]}={name:"",procset:"",group:[]}
   private appendedVars: string[];
   private started: boolean;
+  private debugMap: Map<string,vscode.DebugSession>
 
   public spawn(args: ILaunchRequestArguments): void {
     this.started = false;
@@ -82,18 +84,16 @@ export class GDB4HPC extends EventEmitter {
     this.createPty();
   }
 
-  public launchApps():  Promise<boolean> {
+  public launchApp(app:any):  Promise<boolean> {
     return new Promise(resolve => {
       //for now this should only be one
-      this.apps.forEach(app=>{
-        this.sendCommand(`launch $`+ app.procset + ` ` + app.program + ` ` + app.args);
-        let split = app.procset.split(/\{|\}/)
-        let group = "0.."+(parseInt(split[1])-1).toString();
-        this.focused.name="all"
-        this.focused.procset=split[0];
-        this.focused.group = this.getGroupArray(group);
-        this.appRunning= true;
-      });
+      this.sendCommand(`launch $`+ app.procset + ` ` + app.program + ` ` + app.args);
+      let split = app.procset.split(/\{|\}/)
+      let group = "0.."+(parseInt(split[1])-1).toString();
+      this.focused.name="all"
+      this.focused.procset=split[0];
+      this.focused.group = this.getGroupArray(group);
+      this.appRunning= true;
       resolve(true); 
     });
   }
@@ -118,7 +118,6 @@ export class GDB4HPC extends EventEmitter {
         if (!this.isStarted() && data.toString().startsWith("mi:")){
           this.started = true;
           this.handleOutput(data);
-          this.launchApps().then(()=>{this.emitEvent('entryFocus')});
           return;
         }
         this.handleOutput(data);
@@ -332,12 +331,17 @@ export class GDB4HPC extends EventEmitter {
         const resultThreads: Thread[] = [];
         record.info?.get('msgs').forEach((message:any)=>{
           message['threads'].forEach((thread) => {
-            let new_thread = {procset: message['proc_set'], group: this.getGroupArray(message['group']), id: parseInt(thread.id), name: message['proc_set']+message['group']+": "+parseInt(thread.id)};
+            let new_thread = {procset: message['proc_set'], group: this.getGroupArray(message['group']), id: parseInt(thread.id), name: message['group']+": "+parseInt(thread.id)};
             this.threads.push(new_thread);
           });
         }) 
         this.threads.forEach((thread, index)=>{
           resultThreads.push(new Thread(index+1, thread.name));
+          //if (thread.procset===this.focused.procset && this.checkSubset(this.focused.group,thread.group)){
+            
+          //  resultThreads.push(new Thread(index+1, thread.name))
+          //}
+          
         });
         resolve(resultThreads);
       });
@@ -699,5 +703,12 @@ export class GDB4HPC extends EventEmitter {
 
   public isStarted(): boolean {
     return this.started;
+  }
+
+  public setDebugSessionMap(): void{
+    this.debugMap = new Map();
+    debugSessions.forEach((session)=>{
+      this.debugMap.set(session.name,session);
+    });
   }
 }
