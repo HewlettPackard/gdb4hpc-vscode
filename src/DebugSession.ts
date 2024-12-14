@@ -5,7 +5,9 @@ import { InitializedEvent, LoggingDebugSession, OutputEvent, Scope, Handles,
   StackFrame,StoppedEvent,InvalidatedEvent,TerminatedEvent,Thread, Variable} from '@vscode/debugadapter';
 import { Subject } from 'await-notify';
 import { debugSessions, gdb4hpc } from './extension';
+import { DbgVar } from './GDB4HPC';
 import * as vscode from 'vscode';
+import { env } from 'process';
 
 export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
   program: string;
@@ -21,22 +23,21 @@ export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArgu
 export class DebugSession extends LoggingDebugSession {
   private _configurationDone = new Subject();
   private _variableHandles = new Handles<'locals'>
+  //corresponding number to vscode session
+  name: string;
+  num: number;
+
+  constructor(name: string, num: number) {
+    super();
+    this.name = name;
+    this.num = num;
+  }
 
   protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments) {
-    let e=vscode.debug.activeDebugSession
-    if(!e){
+    //console.error("initializeRequest",vscode.debug.activeDebugSession)
+    //let e=vscode.debug.activeDebugSession
+    //if(!e){
       const refreshFocusEvent = { event: "refreshFocus"} as DebugProtocol.Event;
-      const newAppEvent = { event: "newApp"} as DebugProtocol.Event;
-
-      gdb4hpc.on('newApp', (app)=> {
-        console.log("newApp:", app)
-        if (app){
-          newAppEvent.body = app;
-        }
-        this.sendEvent(newAppEvent);
-        
-      });
-      
       gdb4hpc.on('output', (text) => {
         const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`, 'console');
         this.sendEvent(e);
@@ -65,7 +66,7 @@ export class DebugSession extends LoggingDebugSession {
       response.body.supportsSteppingGranularity = true;
       response.body.supportsLogPoints = true;
       response.body.supportsGotoTargetsRequest = true;
-    }
+    //}
     this.sendResponse(response);
     this.sendEvent(new InitializedEvent());
   }
@@ -83,7 +84,9 @@ export class DebugSession extends LoggingDebugSession {
   protected async launchRequest( response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
     await this._configurationDone.wait(1000);
     if(!vscode.debug.activeDebugSession)gdb4hpc.spawn(args);
-    this.sendResponse(response);
+    gdb4hpc.launchApp(this.num).then(()=>{
+      this.sendResponse(response);
+    });
   }
 
   protected setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments): void {
@@ -112,13 +115,44 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments) {
-    gdb4hpc.getVariables().then((vars: Variable[]) => {
+    gdb4hpc.getVariables().then((vars: DbgVar[]) => {
+      console.error("getVars:",vars);
+      let variables: Variable[] = [];
+      let filtered=[...vars];
+      filtered.forEach((variable)=>{
+        variable.values = variable.values.filter((item)=>item.procset==this.name);
+      })
+      filtered.forEach(variable => {
+        variables = [...variables,...this.convertVariable(variable)??[]];
+      });
       response.body = {
-        variables: vars,
+        variables: variables,
       };
 
       this.sendResponse(response);
     });
+  }
+
+  //Converts variable to the debug adapter variable
+  private convertVariable(variable: DbgVar): Variable[]{
+    const variables: Variable[] = [];
+    if (variable){
+      variable.values.forEach(val => {
+        if (typeof val.value === 'string' && val.value) {
+          val.value = val.value.replace(/\\r/g, ' ').replace(/\\t/g, '\t').replace(/\\v/g, '\v').replace(/\\"/g, '"')
+                                    .replace(/\\'/g, "'").replace(/\\\\/g, '\\').replace(/\\n/g, ' ');
+        }
+
+        if(val.value){
+          let name = variable.name+"("+val.procset+"{"+val.group+"})"
+          const v: DebugProtocol.Variable = new Variable(name, val.value, variable.childNum ? variable.referenceID : 0, variable.referenceID);
+          v.variablesReference = variable.referenceID;
+          v.type = variable.type;
+          variables.push(v);
+        }
+      });
+    }
+    return variables;
   }
 
   protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
@@ -152,20 +186,27 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
-    gdb4hpc.getThreads().then((threads: Thread[]) => {
-      response.body = {
-        threads: threads,
-      };
-      this.sendResponse(response);
-    });
+    //console.error("thread request:",this.name," ",this.num)
+      gdb4hpc.getThreads().then((threads: any[]) => {
+        //console.error("thread request threads:", threads)
+        let filtered = threads.filter((item)=>item.procset==this.name);
+        //console.error("filtered",filtered)
+        response.body = {
+          threads:  filtered,
+        };
+        //console.error(response);
+        this.sendResponse(response);
+      });
   }
   
   protected evaluateRequest(response: DebugProtocol.EvaluateResponse, args: DebugProtocol.EvaluateArguments): void {
     switch (args.context) {
       case 'watch':
       case 'hover': {
-        let variable_array = gdb4hpc.getVariable(args.expression);
-
+        let new_var = gdb4hpc.getVariable(args.expression);
+        new_var?new_var.values = new_var.values.filter((item)=>item.procset==this.name):null;
+        let variable_array = new_var?this.convertVariable(new_var):[];
+        console.error("var array:",variable_array);
         variable_array!.forEach(variable =>  {
           response.body = {
             result: variable!.value?variable!.value:'',
@@ -191,6 +232,14 @@ export class DebugSession extends LoggingDebugSession {
         // no need to catch the output, console output events will automatically be caught and routed
         break;
       }
+    }
+  }
+
+  protected customRequest(command: string, response: DebugProtocol.Response, args: any, request?: DebugProtocol.Request): void {
+    switch(command){
+      case "threads":
+        console.error("msg:",response)
+        
     }
   }
 }

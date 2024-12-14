@@ -39,18 +39,23 @@ class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider 
 			});
     }else{
       this.apps = config.apps;
+      //config.name = config.apps[0].name
+      //config.num = count+1
     }
     return config;
   }
 }
 
 export let debugSessions:vscode.DebugSession[] = [];
+export let app:any;
+export let count = 0;
 
 export function activate(context: vscode.ExtensionContext) {
-  let count = 0;
   const provider = new GDB4HPCConfigurationProvider();
+  console.error("provider")
   context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('gdb4hpc', provider));
-
+  console.error("provider pushed:",provider.apps)
+  app={name:"App0"};
   let factory = new InlineDebugAdapterFactory();
 	context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('gdb4hpc', factory));
   context.subscriptions.push(vscode.commands.registerCommand('getContext', () => context));
@@ -58,22 +63,22 @@ export function activate(context: vscode.ExtensionContext) {
   let session = factory.getSession();
 
   //Add Focus Panel to sidebar
-  let focusProvider = new FocusProvider(context.extensionUri, session);
+  let focusProvider = new FocusProvider(context.extensionUri);
   vscode.window.registerWebviewViewProvider('focusView', focusProvider);
 
   //Add decomposition panel to sidebar
-  let decompositionProvider = new DecompositionProvider(context.extensionUri, session);
+  let decompositionProvider = new DecompositionProvider(context.extensionUri);
   vscode.window.registerWebviewViewProvider("decompView", decompositionProvider);
   vscode.commands.registerCommand('decompView.addEntry', () => {decompositionProvider.addDecomposition()});
 
   //Add comparison panel to sidebar
-  let compareProvider = new CompareProvider(context.extensionUri, session);
+  let compareProvider = new CompareProvider(context.extensionUri);
   vscode.window.registerWebviewViewProvider("compareView", compareProvider);
   vscode.commands.registerCommand('compareView.runCompares', () => {compareProvider.runComparisons()});
   vscode.commands.registerCommand('compareView.addEntry', () => {compareProvider.addComparison();});
 
   //Add assertion panel to sidebar
-  let assertionProvider = new AssertionProvider(context.extensionUri, session);
+  let assertionProvider = new AssertionProvider(context.extensionUri);
   vscode.window.registerWebviewViewProvider("assertView", assertionProvider);
   vscode.commands.registerCommand('assertView.runScripts', () => {assertionProvider.runAssertionScript()});
   vscode.commands.registerCommand('assertView.getInfo', () => {assertionProvider.getAssertionResults()});
@@ -84,37 +89,23 @@ export function activate(context: vscode.ExtensionContext) {
     if(e.event == "refreshFocus"){
       focusProvider.refresh();
     }
-    if (e.event === 'newApp') {
-      let app=e.body;
-      const config: vscode.DebugConfiguration = {
-        ...e.session.configuration,
-      }
-      config.request = 'launch'
-      config.name = "App"+count
-      count ++;
-      vscode.debug.startDebugging(undefined, config, debugSessions[0])
-    }
   })); 
   
   vscode.debug.onDidStartDebugSession(async session => {
     if(!debugSessions.some((sess) => session.id == sess.id)){
       debugSessions.push(session);
-      if(count>0){
-      let app = gdb4hpc.apps[count-1]
-      if(app) gdb4hpc.launchApp(app);
-      }
     } 
-    let app = gdb4hpc.apps[count]
+    count+=1;
+    app = gdb4hpc.apps[count]
     if(app){
       const config: vscode.DebugConfiguration = {
         ...debugSessions[0].configuration,
       }
       config.request = 'launch'
-      config.name = "App"+count
-      config.num = count;
-      count ++;
-      vscode.debug.startDebugging(undefined, config, debugSessions[0])
-    } 
+      config.name = app.name
+      config.num = count
+      vscode.debug.startDebugging(undefined, config)
+    }
   })
   
   /* 
@@ -135,9 +126,12 @@ export function deactivate() {
 }
 
 class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
-  private session: any = new DebugSession();
+  private session: any;
 
 	createDebugAdapterDescriptor(_session: vscode.DebugSession): ProviderResult<vscode.DebugAdapterDescriptor> {
+    this.session = new DebugSession(app.name,count);
+    //console.error("app:",app,"   app num:",count)
+    //console.error("session name:",this.session.name,"   session num:",this.session.num)
     this.session.supportsStartDebugging =true
 		return new vscode.DebugAdapterInlineImplementation(this.session);
 	}

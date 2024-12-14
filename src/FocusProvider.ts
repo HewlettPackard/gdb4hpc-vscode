@@ -13,7 +13,7 @@ export class FocusProvider implements vscode.WebviewViewProvider {
 		private readonly _extensionUri: vscode.Uri
 	) {	}
 
-	public resolveWebviewView(webviewView: vscode.WebviewView,context: vscode.WebviewViewResolveContext,_token: vscode.CancellationToken) {
+	public resolveWebviewView(webviewView: vscode.WebviewView, context: vscode.WebviewViewResolveContext,_token: vscode.CancellationToken) {
 		this._view = webviewView || null;
 
 		this._view.webview.options = {

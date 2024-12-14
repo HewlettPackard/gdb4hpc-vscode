@@ -84,7 +84,8 @@ export class GDB4HPC extends EventEmitter {
     this.createPty();
   }
 
-  public launchApp(app:any):  Promise<boolean> {
+  public launchApp(num:number):  Promise<boolean> {
+    let app = this.apps[num];
     return new Promise(resolve => {
       //for now this should only be one
       this.sendCommand(`launch $`+ app.procset + ` ` + app.program + ` ` + app.args);
@@ -275,6 +276,7 @@ export class GDB4HPC extends EventEmitter {
         break;
     }
   }
+
   private emitEvent(event: string){
     if(event=='exited-normally'){
       this.emit('exited-normally')
@@ -324,38 +326,37 @@ export class GDB4HPC extends EventEmitter {
     })
   }
 
-  public getThreads(): Promise<Thread[]> {    
+  public getThreads(): Promise<any[]> { 
     return new Promise(resolve => {
       this.sendCommand('-thread-info').then((record: Record) => {
         this.threads = [];
-        const resultThreads: Thread[] = [];
+        let results:DbgThread[] =[];
+        //const resultThreads: Thread[] = [];
         record.info?.get('msgs').forEach((message:any)=>{
           message['threads'].forEach((thread) => {
-            let new_thread = {procset: message['proc_set'], group: this.getGroupArray(message['group']), id: parseInt(thread.id), name: message['group']+": "+parseInt(thread.id)};
-            this.threads.push(new_thread);
+            let new_thread = {procset: message['proc_set'], group: this.getGroupArray(message['group']), id: parseInt(thread.id), name: message['proc_set']+message['group']+": "+parseInt(thread.id)};
+            results.push(new_thread);
           });
         }) 
+        //console.error("gdb4hpc threads:",results)
+        /*
         this.threads.forEach((thread, index)=>{
           resultThreads.push(new Thread(index+1, thread.name));
-          //if (thread.procset===this.focused.procset && this.checkSubset(this.focused.group,thread.group)){
-            
-          //  resultThreads.push(new Thread(index+1, thread.name))
-          //}
           
-        });
-        resolve(resultThreads);
+        });*/
+        resolve(results);
       });
     });
   }
 
-  public getVariable(name: string): Variable[] | undefined {
+  public getVariable(name: string): DbgVar | undefined {
     let variable = this.findVariable(name);
     if (!variable){
       this.createVariable(name).then((v) => {
-        return this.convertVariable(v);
+        return v;
       });
     }else{
-      return this.convertVariable(variable);
+      return variable;
     }
   }
 
@@ -446,7 +447,7 @@ export class GDB4HPC extends EventEmitter {
   }
 
   //Converts variable to the debug adapter variable
-  private convertVariable(variable: DbgVar): Variable[]{
+ /* private convertVariable(variable: DbgVar): Variable[]{
     const variables: Variable[] = [];
     if (variable){
       variable.values.forEach(val => {
@@ -465,10 +466,10 @@ export class GDB4HPC extends EventEmitter {
       });
     }
     return variables;
-  }
+  }*/
   
   //get list of variables from gdb4hpc
-  public getVariables(): Promise<Variable[]> {
+  public getVariables(): Promise<DbgVar[]> {
     return new Promise(resolve => {
       this.sendCommand(`-stack-list-variables`).then((record: Record) => {
         const pending: Promise<DbgVar>[] = [];
@@ -481,11 +482,12 @@ export class GDB4HPC extends EventEmitter {
 
         Promise.all(pending).then(() => {
           this.updateVariables().then(()=>{
-            let variables: Variable[] = [];
-            this.variables.forEach(variable => {
+            //let variables: Variable[] = [];
+            /*this.variables.forEach(variable => {
               variables = [...variables,...this.convertVariable(variable)??[]];
-            });
-            resolve(variables);  
+            });*/
+            console.error(this.variables)
+            resolve(this.variables);  
           });
         });
       });
@@ -496,6 +498,7 @@ export class GDB4HPC extends EventEmitter {
     return new Promise(resolve => {
       this.sendCommand(`-stack-list-frames`).then((record: Record) => {
         const stackFrame: DebugProtocol.StackFrame[] = [];
+        console.error(record);
         let stack = record.info?.get('stack');
         for (let i = startFrame; i < Math.min(endFrame, stack.length); i++) {
           let frame = stack[i].frame;
@@ -710,5 +713,9 @@ export class GDB4HPC extends EventEmitter {
     debugSessions.forEach((session)=>{
       this.debugMap.set(session.name,session);
     });
+  }
+
+  public getSessionThreads(session:string): any[]{
+    return this.threads.filter((thread)=>{thread.procset==session})
   }
 }
