@@ -22,6 +22,7 @@ class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider 
    */
   resolveDebugConfiguration(folder: WorkspaceFolder | undefined, config: DebugConfiguration, token?: CancellationToken): ProviderResult<DebugConfiguration> {
     // if launch.json is missing or empty
+    console.error("in resolve debug configuration")
     if (!config.type && !config.request && !config.name) {
       const editor = vscode.window.activeTextEditor;
       
@@ -38,11 +39,17 @@ class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider 
 				return undefined;	// abort launch
 			});
     }else{
-      this.apps = config.apps;
-      //config.name = config.apps[0].name
-      //config.num = count+1
+      if(count<config.apps.length){
+
+
+
+
+        console.error("console",config)
+        app=config.apps[count]
+        config.name = config.apps[count].name
+        return config;
+      }
     }
-    return config;
   }
 }
 
@@ -54,13 +61,10 @@ export function activate(context: vscode.ExtensionContext) {
   const provider = new GDB4HPCConfigurationProvider();
   console.error("provider")
   context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('gdb4hpc', provider));
-  console.error("provider pushed:",provider.apps)
-  app={name:"App0"};
+  console.error("provider pushed:",provider)
   let factory = new InlineDebugAdapterFactory();
 	context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('gdb4hpc', factory));
   context.subscriptions.push(vscode.commands.registerCommand('getContext', () => context));
-
-  let session = factory.getSession();
 
   //Add Focus Panel to sidebar
   let focusProvider = new FocusProvider(context.extensionUri);
@@ -96,15 +100,37 @@ export function activate(context: vscode.ExtensionContext) {
       debugSessions.push(session);
     } 
     count+=1;
-    app = gdb4hpc.apps[count]
+    app=gdb4hpc.apps[count]
+    console.error("app in config",app)
     if(app){
+      console.error("in app")
       const config: vscode.DebugConfiguration = {
         ...debugSessions[0].configuration,
       }
       config.request = 'launch'
-      config.name = app.name
       config.num = count
+      console.error("about to startdebugging", config.name)
       vscode.debug.startDebugging(undefined, config)
+      console.error("finished starting debugging")
+    }else{
+      console.error("no app")
+    }
+  })
+
+  vscode.debug.onDidTerminateDebugSession(async (session:vscode.DebugSession )=>{
+    let i = debugSessions.findIndex(dbgsess=>{dbgsess.id == session.id})
+    if (i){
+      debugSessions.splice(i,1);
+    }
+    if(debugSessions.length==0){
+      gdb4hpc.sendCommand("quit");
+      count = 0;
+    }
+  })
+
+  vscode.debug.onDidChangeActiveDebugSession(async(session:vscode.DebugSession|undefined)=>{
+    if (session){
+      let i= debugSessions.find(dbgsess=>{dbgsess.id == session.id})
     }
   })
   
@@ -122,6 +148,7 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
+  count = 0;
 	// nothing to do
 }
 
@@ -130,8 +157,8 @@ class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory 
 
 	createDebugAdapterDescriptor(_session: vscode.DebugSession): ProviderResult<vscode.DebugAdapterDescriptor> {
     this.session = new DebugSession(app.name,count);
-    //console.error("app:",app,"   app num:",count)
-    //console.error("session name:",this.session.name,"   session num:",this.session.num)
+    console.error("app:",app,"   app num:",count)
+    console.error("session name:",this.session.name,"   session num:",this.session.num)
     this.session.supportsStartDebugging =true
 		return new vscode.DebugAdapterInlineImplementation(this.session);
 	}
