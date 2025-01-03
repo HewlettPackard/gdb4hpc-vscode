@@ -118,19 +118,29 @@ export function activate(context: vscode.ExtensionContext) {
   })
 
   vscode.debug.onDidTerminateDebugSession(async (session:vscode.DebugSession )=>{
+    console.error("terminating session")
     let i = debugSessions.findIndex(dbgsess=>{dbgsess.id == session.id})
     if (i){
+      console.error("removing:",i)
       debugSessions.splice(i,1);
     }
     if(debugSessions.length==0){
+      console.error("debugSessions list is empty")
       gdb4hpc.sendCommand("quit");
       count = 0;
     }
   })
 
   vscode.debug.onDidChangeActiveDebugSession(async(session:vscode.DebugSession|undefined)=>{
+    console.error("changing active session",session)
     if (session){
-      let i= debugSessions.find(dbgsess=>{dbgsess.id == session.id})
+      console.error("changed active session",debugSessions)
+      let i = debugSessions.findIndex(dbgsess=>dbgsess.name === session.name)
+      console.error("i:",i)
+      let line = gdb4hpc.getCurrentLine(i);
+      let file = gdb4hpc.getCurrentFile(i);
+      console.error("line:",line,"file:",file)
+      gdb4hpc.openToFile(line,file);
     }
   })
   

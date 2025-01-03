@@ -37,40 +37,36 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments) {
-    //console.error("initializeRequest",vscode.debug.activeDebugSession)
-    //let e=vscode.debug.activeDebugSession
-    //if(!e){
-      console.error("initialize request");
-      const refreshFocusEvent = { event: "refreshFocus"} as DebugProtocol.Event;
-      gdb4hpc.on('output', (text) => {
-        const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`, 'console');
-        this.sendEvent(e);
-      });
+    console.error("initialize request");
+    const refreshFocusEvent = { event: "refreshFocus"} as DebugProtocol.Event;
+    gdb4hpc.on('output', (text) => {
+      const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`, 'console');
+      this.sendEvent(e);
+    });
 
-      gdb4hpc.on('breakpoint-hit', (threadID:any) => {
-        this.sendEvent(new InvalidatedEvent(['variables']));
-        this.sendEvent(new StoppedEvent('breakpoint',threadID));
-        this.sendEvent(refreshFocusEvent);
-      });
+    gdb4hpc.on('breakpoint-hit', (threadID:any) => {
+      this.sendEvent(new InvalidatedEvent(['variables']));
+      this.sendEvent(new StoppedEvent('breakpoint',threadID));
+      this.sendEvent(refreshFocusEvent);
+    });
 
-      gdb4hpc.on('end-stepping-range', (threadID: number) => {
-        this.sendEvent(new StoppedEvent('step', threadID));
-        this.sendEvent(refreshFocusEvent);
-      });
+    gdb4hpc.on('end-stepping-range', (threadID: number) => {
+      this.sendEvent(new StoppedEvent('step', threadID));
+      this.sendEvent(refreshFocusEvent);
+    });
 
-      gdb4hpc.on('exited-normally', () => {
-        this.sendEvent(new TerminatedEvent());
-      });
+    gdb4hpc.on('exited-normally', () => {
+      this.sendEvent(new TerminatedEvent());
+    });
 
-      response.body = response.body || {};
-      response.body.supportsConfigurationDoneRequest = true;
-      response.body.supportsEvaluateForHovers = true;
-      response.body.supportsCompletionsRequest = true;
-      response.body.supportsStepBack = false;
-      response.body.supportsSteppingGranularity = true;
-      response.body.supportsLogPoints = true;
-      response.body.supportsGotoTargetsRequest = true;
-    //}
+    response.body = response.body || {};
+    response.body.supportsConfigurationDoneRequest = true;
+    response.body.supportsEvaluateForHovers = true;
+    response.body.supportsCompletionsRequest = true;
+    response.body.supportsStepBack = false;
+    response.body.supportsSteppingGranularity = true;
+    response.body.supportsLogPoints = true;
+    response.body.supportsGotoTargetsRequest = true;
     this.sendResponse(response);
     this.sendEvent(new InitializedEvent());
   }
@@ -105,7 +101,12 @@ export class DebugSession extends LoggingDebugSession {
 		const maxLevels = typeof args.levels === 'number' ? args.levels : 1000;
 		const endFrame = startFrame + maxLevels;
 
-		gdb4hpc.stack(startFrame, endFrame).then((stack: StackFrame[]) => {
+    console.warn("threadId:",args.threadId,"session:",this.name)
+    //let threads=gdb4hpc.getSessionThreads(this.name);
+    //let requestThread = threads.filter((thread)=>thread.id == args.threadId)
+
+		gdb4hpc.stack(startFrame, endFrame,args.threadId,this.name).then((stack: StackFrame[]) => {
+      console.warn("threadId:",args.threadId,"session:",this.name)
       response.body = {stackFrames: stack, totalFrames: stack.length};
       this.sendResponse(response);
     });
@@ -200,8 +201,8 @@ export class DebugSession extends LoggingDebugSession {
         console.error("filtered",filtered)
         if(filtered){
           let resultThreads:Thread[] = []
-          filtered.forEach((thread, index)=>{
-            resultThreads.push(new Thread(index+1, thread.name));
+          filtered.forEach((thread)=>{
+            resultThreads.push(new Thread(thread.id, thread.name));
             
           });
           response.body = {
@@ -217,7 +218,7 @@ export class DebugSession extends LoggingDebugSession {
     switch (args.context) {
       case 'watch':
       case 'hover': {
-        let new_var = gdb4hpc.getVariable(args.expression);
+        let new_var = gdb4hpc.getVariable(this.name,args.expression);
         new_var?new_var.values = new_var.values.filter((item)=>item.procset==this.name):null;
         let variable_array = new_var?this.convertVariable(new_var):[];
         console.error("var array:",variable_array);
@@ -255,5 +256,9 @@ export class DebugSession extends LoggingDebugSession {
         console.error("msg:",response)
         
     }
+  }
+
+  public getNumber():number{
+    return this.num;
   }
 }
