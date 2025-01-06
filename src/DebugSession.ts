@@ -39,10 +39,14 @@ export class DebugSession extends LoggingDebugSession {
   protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments) {
     console.error("initialize request");
     const refreshFocusEvent = { event: "refreshFocus"} as DebugProtocol.Event;
-    gdb4hpc.on('output', (text) => {
-      const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`, 'console');
-      this.sendEvent(e);
-    });
+
+    //only let one debug console print output
+    if (this.num == 0){
+      gdb4hpc.on('output', (text) => {
+        const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`, 'console');
+        this.sendEvent(e);
+      });
+    }
 
     gdb4hpc.on('breakpoint-hit', (threadID:any) => {
       this.sendEvent(new InvalidatedEvent(['variables']));
@@ -102,10 +106,8 @@ export class DebugSession extends LoggingDebugSession {
 		const endFrame = startFrame + maxLevels;
 
     console.warn("threadId:",args.threadId,"session:",this.name)
-    //let threads=gdb4hpc.getSessionThreads(this.name);
-    //let requestThread = threads.filter((thread)=>thread.id == args.threadId)
 
-		gdb4hpc.stack(startFrame, endFrame,args.threadId,this.name).then((stack: StackFrame[]) => {
+		gdb4hpc.stack(startFrame, endFrame,args.threadId,this.name).then((stack: DebugProtocol.StackFrame[]) => {
       console.warn("threadId:",args.threadId,"session:",this.name)
       response.body = {stackFrames: stack, totalFrames: stack.length};
       this.sendResponse(response);
@@ -195,13 +197,13 @@ export class DebugSession extends LoggingDebugSession {
   protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
     console.error("thread");
     console.error("thread request:",this.name," ",this.num)
-      gdb4hpc.getThreads().then((threads: any[]) => {
+      gdb4hpc.getThreads().then((threads:Map<string,any[]>) => {
         console.error("thread request threads:", threads)
-        let filtered = threads.filter((item)=>item.procset==this.name);
-        console.error("filtered",filtered)
-        if(filtered){
+        let sessionThreads = threads[this.name]
+        console.error("filtered",sessionThreads)
+        if(sessionThreads){
           let resultThreads:Thread[] = []
-          filtered.forEach((thread)=>{
+          sessionThreads.forEach((thread)=>{
             resultThreads.push(new Thread(thread.id, thread.name));
             
           });
@@ -218,7 +220,7 @@ export class DebugSession extends LoggingDebugSession {
     switch (args.context) {
       case 'watch':
       case 'hover': {
-        let new_var = gdb4hpc.getVariable(this.name,args.expression);
+        let new_var = gdb4hpc.getVariable(args.expression);
         new_var?new_var.values = new_var.values.filter((item)=>item.procset==this.name):null;
         let variable_array = new_var?this.convertVariable(new_var):[];
         console.error("var array:",variable_array);
