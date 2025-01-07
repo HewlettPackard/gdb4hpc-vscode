@@ -1,14 +1,13 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import {DebugProtocol} from '@vscode/debugprotocol';
-import { InitializedEvent, LoggingDebugSession, OutputEvent, Scope, Handles,
-  StackFrame,StoppedEvent,InvalidatedEvent,TerminatedEvent,Thread, Variable} from '@vscode/debugadapter';
+import { InitializedEvent, LoggingDebugSession, OutputEvent, Scope, Handles, 
+  StoppedEvent,InvalidatedEvent,TerminatedEvent,Thread, Variable} from '@vscode/debugadapter';
 import { Subject } from 'await-notify';
-import { debugSessions, gdb4hpc } from './extension';
+import { continue_cmd, next_cmd, pause_cmd, stepIn_cmd, stepOut_cmd, setBreakpoints, terminate_cmd,on_cmd,
+  getThreads, stack, getVariables, spawn, launchApp, sendCommand, isStarted, writeToPty, getVariable } from './extension';
 import { DbgVar } from './GDB4HPC';
 import * as vscode from 'vscode';
-import { env } from 'process';
-import { FocusProvider } from './FocusProvider';
 
 export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
   program: string;
@@ -42,24 +41,24 @@ export class DebugSession extends LoggingDebugSession {
 
     //only let one debug console print output
     if (this.num == 0){
-      gdb4hpc.on('output', (text) => {
+      on_cmd('output', (text) => {
         const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`, 'console');
         this.sendEvent(e);
       });
     }
 
-    gdb4hpc.on('breakpoint-hit', (threadID:any) => {
+    on_cmd('breakpoint-hit', (threadID:any) => {
       this.sendEvent(new InvalidatedEvent(['variables']));
       this.sendEvent(new StoppedEvent('breakpoint',threadID));
       this.sendEvent(refreshFocusEvent);
     });
 
-    gdb4hpc.on('end-stepping-range', (threadID: number) => {
+    on_cmd('end-stepping-range', (threadID: number) => {
       this.sendEvent(new StoppedEvent('step', threadID));
       this.sendEvent(refreshFocusEvent);
     });
 
-    gdb4hpc.on('exited-normally', () => {
+    on_cmd('exited-normally', () => {
       this.sendEvent(new TerminatedEvent());
     });
 
@@ -76,7 +75,7 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments): void {
-    gdb4hpc.terminate().then(() => {
+    terminate_cmd().then(() => {
       this.sendResponse(response);
     });
   }
@@ -88,14 +87,14 @@ export class DebugSession extends LoggingDebugSession {
   protected async launchRequest( response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
     console.error("launch request");
     await this._configurationDone.wait(1000);
-    if(!vscode.debug.activeDebugSession)gdb4hpc.spawn(args);
-    gdb4hpc.launchApp(this.num).then(()=>{
+    if(!vscode.debug.activeDebugSession)spawn(args);
+    launchApp(this.num).then(()=>{
       this.sendResponse(response);
     });
   }
 
   protected setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments): void {
-    gdb4hpc.setBreakpoints(args.source.path || '', args.breakpoints || []).then(() => {
+    setBreakpoints(args.source.path || '', args.breakpoints || []).then(() => {
       this.sendResponse(response);
     });
   }
@@ -107,7 +106,7 @@ export class DebugSession extends LoggingDebugSession {
 
     console.warn("threadId:",args.threadId,"session:",this.name)
 
-		gdb4hpc.stack(startFrame, endFrame,args.threadId,this.name).then((stack: DebugProtocol.StackFrame[]) => {
+		stack(startFrame, endFrame,args.threadId,this.name).then((stack: DebugProtocol.StackFrame[]) => {
       console.warn("threadId:",args.threadId,"session:",this.name)
       response.body = {stackFrames: stack, totalFrames: stack.length};
       this.sendResponse(response);
@@ -124,7 +123,7 @@ export class DebugSession extends LoggingDebugSession {
 
   protected variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments) {
     console.error("variablesRequest");
-    gdb4hpc.getVariables().then((vars: DbgVar[]) => {
+    getVariables().then((vars: DbgVar[]) => {
       console.error("getVars:",vars);
       let variables: Variable[] = [];
       let filtered=[...vars];
@@ -165,31 +164,31 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
-    gdb4hpc.next().then(() => {  
+    next_cmd().then(() => {  
       this.sendResponse(response);
     });
   }
 
   protected stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments): void {
-    gdb4hpc.stepIn().then(() => {
+    stepIn_cmd().then(() => {
       this.sendResponse(response);
     });
   }
 
   protected stepOutRequest(response: DebugProtocol.StepOutResponse, args: DebugProtocol.StepInArguments): void {
-    gdb4hpc.stepOut().then(() => {
+    stepOut_cmd().then(() => {
       this.sendResponse(response);
     });
   }
   
   protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
-    gdb4hpc.continue().then(() => {
+    continue_cmd().then(() => {
       this.sendResponse(response);
     });
   }
 
   protected pauseRequest(response: DebugProtocol.PauseResponse, args: DebugProtocol.PauseArguments): void {
-    gdb4hpc.pause().then(() => {
+    pause_cmd().then(() => {
       this.sendResponse(response)
     });
   }
@@ -197,9 +196,9 @@ export class DebugSession extends LoggingDebugSession {
   protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
     console.error("thread");
     console.error("thread request:",this.name," ",this.num)
-      gdb4hpc.getThreads().then((threads:Map<string,any[]>) => {
-        console.error("thread request threads:", threads)
-        let sessionThreads = threads[this.name]
+      getThreads().then((threads:Map<string,any[]>) => {
+        console.error("thread request threads:", [...threads])
+        let sessionThreads = threads.get(this.name)
         console.error("filtered",sessionThreads)
         if(sessionThreads){
           let resultThreads:Thread[] = []
@@ -220,7 +219,7 @@ export class DebugSession extends LoggingDebugSession {
     switch (args.context) {
       case 'watch':
       case 'hover': {
-        let new_var = gdb4hpc.getVariable(args.expression);
+        let new_var = getVariable(args.expression);
         new_var?new_var.values = new_var.values.filter((item)=>item.procset==this.name):null;
         let variable_array = new_var?this.convertVariable(new_var):[];
         console.error("var array:",variable_array);
@@ -240,12 +239,12 @@ export class DebugSession extends LoggingDebugSession {
         break;
       }
       case 'repl': {
-        if(!gdb4hpc.isStarted()){
-          gdb4hpc.writeToPty(args.expression);
+        if(!isStarted()){
+          writeToPty(args.expression);
           break;
         }
         // this is where text entered in the debug console ends up. send the command to gdb4hpc.
-        gdb4hpc.sendCommand(args.expression);
+        sendCommand(args.expression);
         // no need to catch the output, console output events will automatically be caught and routed
         break;
       }

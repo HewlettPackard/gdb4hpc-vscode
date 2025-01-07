@@ -1,7 +1,7 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
-import { gdb4hpc } from './extension';
+import { runCompare } from './extension';
 
 export var compare_list: any[] =[];
 
@@ -55,7 +55,7 @@ export class CompareProvider implements vscode.WebviewViewProvider {
   }
 
 	runComparisons(){
-		gdb4hpc.runComparisons().then(()=>{
+		runCompare().then(()=>{
 			this._view?.webview.postMessage({type:'comparesUpdated', value: compare_list});
 		});
 	}

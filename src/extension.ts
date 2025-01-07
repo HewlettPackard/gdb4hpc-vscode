@@ -126,7 +126,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
     if(debugSessions.length==0){
       console.error("debugSessions list is empty")
-      gdb4hpc.sendCommand("quit");
+      gdb4hpc.sendCommand("-gdb-exit");
       count = 0;
     }
   })
@@ -135,6 +135,7 @@ export function activate(context: vscode.ExtensionContext) {
     console.error("changing active session",session)
     if (session){
       console.error("changed active session",debugSessions)
+      if(debugSessions.length==0) debugSessions.push(session)
       let i = debugSessions.findIndex(dbgsess=>dbgsess.name === session.name)
       console.error("i:",i)
       let line = gdb4hpc.getCurrentLine(i);
@@ -161,6 +162,111 @@ export function deactivate() {
   count = 0;
 	// nothing to do
 }
+
+
+//gdb4hpc functions
+export function runAssertScript(assertion: any){
+  return gdb4hpc.runAssertionScript(assertion)
+}
+
+export function getAssertResults(assertion: any){
+  return gdb4hpc.getAssertionResults(assertion)
+}
+
+export function buildAssertScript(new_script: any){
+  return gdb4hpc.buildAssertionScript(new_script)
+}
+
+export function buildDecomposition(decomp_cmds: any){
+  return gdb4hpc.buildDecomposition(decomp_cmds)
+}
+
+export function runCompare(){
+  return gdb4hpc.runComparisons()
+}
+
+export function changeFocus(procset){
+  return gdb4hpc.changeFocus(procset)
+}
+
+export function addProcset(name, procset){
+  return gdb4hpc.addProcset(name,procset)
+}
+
+export function getProcsetList(){
+  return gdb4hpc.getProcsetList()
+}
+
+export function setBreakpoints(file, breakpoints){
+  return gdb4hpc.setBreakpoints(file,breakpoints)
+}
+
+export function launchApp(num){
+  return gdb4hpc.launchApp(num)
+}
+
+export function next_cmd(){
+  return gdb4hpc.next()
+}
+
+export function continue_cmd(){
+  return gdb4hpc.continue()
+}
+
+export function pause_cmd(){
+  return gdb4hpc.pause()
+}
+
+export function terminate_cmd(){
+  return gdb4hpc.terminate()
+}
+
+export function stepIn_cmd(){
+  return gdb4hpc.stepIn()
+}
+
+export function stepOut_cmd(){
+  return gdb4hpc.stepOut()
+}
+
+export function getThreads(){
+  return gdb4hpc.getThreads()
+}
+
+export function stack(startFrame, endFrame,threadId,name){
+  return gdb4hpc.stack(startFrame, endFrame,threadId,name)
+}
+
+export function getVariables(){
+  return gdb4hpc.getVariables()
+}
+
+export function getVariable(expression){
+  return gdb4hpc.getVariable(expression)
+}
+
+export function spawn(args){
+  return gdb4hpc.spawn(args)
+}
+
+export function sendCommand(expression){
+  return gdb4hpc.sendCommand(expression)
+}
+
+export function writeToPty(expression){
+  return gdb4hpc.writeToPty(expression)
+}
+
+export function isStarted(){
+  return gdb4hpc.isStarted()
+}
+
+export function on_cmd(event, callback){
+  return gdb4hpc.on(event, callback)
+}
+
+
+
 
 class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
   private session: any;

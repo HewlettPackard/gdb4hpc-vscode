@@ -1,7 +1,7 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
-import { gdb4hpc } from './extension';
+import { runAssertScript, buildAssertScript,getAssertResults } from './extension';
 
 export var script_list: any[] =[];
 
@@ -90,7 +90,7 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 					let new_script={name:name, stopOnError: stopOnError, asserts:asserts, checked: false}
 					
 					//build assert script
-					gdb4hpc.buildAssertionScript(new_script).then(()=>{
+					buildAssertScript(new_script).then(()=>{
 						script_list.push(new_script)
 						this._view?.webview.postMessage({type:'scriptsUpdated', value: script_list});
 					},null);
@@ -104,7 +104,7 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 		if (!choice[0].name){
 			return;
 		}
-		gdb4hpc.runAssertionScript(choice[0]);
+		runAssertScript(choice[0]);
 	}
 
 	getAssertionResults(){
@@ -112,7 +112,7 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 		if (!choice){
 			return;
 		}
-		gdb4hpc.getAssertionResults(choice[0]).then(()=>{
+		getAssertResults(choice[0]).then(()=>{
 			this._view?.webview.postMessage({type:'scriptsUpdated', value: script_list});
 		});
 	}
