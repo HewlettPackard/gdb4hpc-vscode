@@ -12,7 +12,11 @@ import { DecompositionProvider } from './DecompostionProvider';
 import { GDB4HPC } from './GDB4HPC';
 
 export let gdb4hpc=new GDB4HPC;
+export let debugSessions:vscode.DebugSession[] = [];
+export let app:any;
+export let count = 0;
 
+//launch config
 class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider {
 
   public apps: any;
@@ -38,6 +42,7 @@ class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider 
 				return undefined;	// abort launch
 			});
     }else{
+      //change the name to app name for each session. (First one defaults to name of extension otherwise)
       if(count<config.apps.length){
         app=config.apps[count]
         config.name = config.apps[count].name
@@ -47,10 +52,7 @@ class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider 
   }
 }
 
-export let debugSessions:vscode.DebugSession[] = [];
-export let app:any;
-export let count = 0;
-
+//activate extension
 export function activate(context: vscode.ExtensionContext) {
   const provider = new GDB4HPCConfigurationProvider();
   context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('gdb4hpc', provider));
@@ -87,6 +89,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   })); 
   
+  //once a debugSession is launched for an app, launch another until all are launched
   vscode.debug.onDidStartDebugSession(async session => {
     if(!debugSessions.some((sess) => session.id == sess.id)){
       debugSessions.push(session);
@@ -103,6 +106,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   })
 
+  //terminate the sessions, if no more are active exit gdb4hpc
   vscode.debug.onDidTerminateDebugSession(async (session:vscode.DebugSession )=>{
     let i = debugSessions.findIndex(dbgsess=>{dbgsess.id == session.id})
     if (i){
@@ -114,6 +118,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   })
 
+  //show file and line of active debug session
   vscode.debug.onDidChangeActiveDebugSession(async(session:vscode.DebugSession|undefined)=>{
     if (session){
       if(debugSessions.length==0) debugSessions.push(session)
@@ -123,18 +128,6 @@ export function activate(context: vscode.ExtensionContext) {
       gdb4hpc.openToFile(line,file);
     }
   })
-  
-  /* 
-  //Extra debug data to development console
-  vscode.debug.registerDebugAdapterTrackerFactory('*', {
-    createDebugAdapterTracker(session: vscode.DebugSession) {
-      return {
-        onWillReceiveMessage: m => console.log(`> ${JSON.stringify(m, undefined, 2)}`),
-        onDidSendMessage: m => console.log(`< ${JSON.stringify(m, undefined, 2)}`)
-      };
-    }
-  });
-  */
 }
 
 export function deactivate() {
@@ -142,8 +135,17 @@ export function deactivate() {
 	// nothing to do
 }
 
+class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
+  private session: any;
 
-//gdb4hpc functions
+	createDebugAdapterDescriptor(_session: vscode.DebugSession): ProviderResult<vscode.DebugAdapterDescriptor> {
+    this.session = new DebugSession(app.name,count);
+    this.session.supportsStartDebugging =true
+		return new vscode.DebugAdapterInlineImplementation(this.session);
+	}
+}
+
+//functions to access gdb4hpc
 export function runAssertScript(assertion: any){
   return gdb4hpc.runAssertionScript(assertion)
 }
@@ -243,22 +245,3 @@ export function isStarted(){
 export function on_cmd(event, callback){
   return gdb4hpc.on(event, callback)
 }
-
-
-
-
-class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
-  private session: any;
-
-	createDebugAdapterDescriptor(_session: vscode.DebugSession): ProviderResult<vscode.DebugAdapterDescriptor> {
-    this.session = new DebugSession(app.name,count);
-    this.session.supportsStartDebugging =true
-		return new vscode.DebugAdapterInlineImplementation(this.session);
-	}
-
-  getSession(){
-    return this.session;
-  }
-
-}
-

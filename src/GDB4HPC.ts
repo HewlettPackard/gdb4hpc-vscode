@@ -62,9 +62,9 @@ export class GDB4HPC extends EventEmitter {
   private focused:{name:string,procset:any}={name:"",procset:{}};
   private appendedVars: string[];
   private started: boolean;
-  private debugMap: Map<string,vscode.DebugSession>
   private launchCount:number =0;
 
+  //spawn gdb4hpc
   public spawn(args: ILaunchRequestArguments): void {
     this.started = false;
     this.cwd = args.cwd || '';
@@ -87,6 +87,7 @@ export class GDB4HPC extends EventEmitter {
     this.createPty();
   }
 
+  //launch applications
   public launchApp(num:number):  Promise<boolean> {
     let app = this.apps[num];
     return new Promise(resolve => {
@@ -99,6 +100,7 @@ export class GDB4HPC extends EventEmitter {
     });
   }
 
+  //create pty to connect gdb4hpc to vscode
   private createPty(): Promise<boolean> {
     return new Promise(resolve => {
       this.gdb4hpcPty = pty.spawn('bash', [], {
@@ -146,6 +148,7 @@ export class GDB4HPC extends EventEmitter {
   //write commands from Debug Console to PTY
   public writeToPty(command: string){
     if (command.startsWith("gdb4hpc")){
+      //start gdb4hpc
       this.gdb4hpcPty.write(`${command} --interpreter=mi\n`);
     }else{
       this.gdb4hpcPty.write(`${command}\n`);
@@ -281,6 +284,7 @@ export class GDB4HPC extends EventEmitter {
     }
   }
 
+  //point to the current line in the current file
   public openToFile(line:number, file:string){
     if(file.length>0&&line>0){
       var openPath = vscode.Uri.file(file); 
@@ -340,6 +344,8 @@ export class GDB4HPC extends EventEmitter {
     return new Promise(resolve => {
       this.sendCommand('-thread-info').then((record: Record) => {
         let results:Map<string, DbgThread[]> = new Map<string,DbgThread[]>(); 
+        
+        //create a list of threads in focus
         record.info?.get('msgs').forEach((message:any)=>{
           message['threads'].forEach((thread) => {
             let new_thread = {procset: message['proc_set'], group: this.getGroupArray(message['group']), 
@@ -357,6 +363,7 @@ export class GDB4HPC extends EventEmitter {
             this.threads.set(key, value);
           });
         }else{
+          //keep threads if not in focus, otherwise replace with the result threads
           for (const key of results.keys()) {
             if(!this.threads.has(key)){
               this.threads.set(key,results.get(key)!);
@@ -500,6 +507,7 @@ export class GDB4HPC extends EventEmitter {
             stackResults.push(sf);
           }
           
+          //update existing items in this.stacks with new stack info
           if (this.stacks.has(msg_procset)){
             this.stacks.get(msg_procset)?.forEach((old:any)=>{
               if (this.getGroupArray(msg_group).includes(old.rank)){
@@ -507,6 +515,7 @@ export class GDB4HPC extends EventEmitter {
               }
             })
           }else{
+            //add new items to this.stacks
             let ranks = this.getGroupArray(msg_group)
             let appStacks:any = []
             ranks.forEach((rank)=>{
@@ -516,6 +525,7 @@ export class GDB4HPC extends EventEmitter {
           }
         })
 
+        //return only the stacks for requested thread
         final = this.stacks.get(requestThread[0].procset)?.filter((rankItem)=>requestThread[0].group.includes(rankItem.rank))[0].stack
         resolve(final);
       })
@@ -612,6 +622,7 @@ export class GDB4HPC extends EventEmitter {
     this.focused.name = name
     this.focused.procset={};
     if(name =="all"){
+      //get all procsets to put in focus
       let merged:any = []
       for(let i =0; i<this.launchCount;i++){
         merged.push(this.apps[i].procset);
@@ -625,6 +636,7 @@ export class GDB4HPC extends EventEmitter {
     })
   }
 
+  //turn group string into an array
   private getGroupArray(group:string):number[]{
     let g: number[] =[];
     if(!group){
@@ -735,6 +747,7 @@ export class GDB4HPC extends EventEmitter {
     return this.started;
   }
 
+  //filter application threads
   public getSessionThreads(session:string): DbgThread[]{
     if(this.threads.has(session)){
       return this.threads.get(session)!

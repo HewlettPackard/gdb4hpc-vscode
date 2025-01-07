@@ -23,7 +23,8 @@ export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArgu
 export class DebugSession extends LoggingDebugSession {
   private _configurationDone = new Subject();
   private _variableHandles = new Handles<'locals'>
-  //corresponding number to vscode session
+  
+  //information for the DebugSession instance
   name: string;
   num: number;
   currentLine:number
@@ -83,9 +84,10 @@ export class DebugSession extends LoggingDebugSession {
 		this._configurationDone.notify();
 	}
 
+  //launch gdb4hpc if nothing is active, otherwise launch an application
   protected async launchRequest( response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
     await this._configurationDone.wait(1000);
-    if(!vscode.debug.activeDebugSession)spawn(args);
+    if(!vscode.debug.activeDebugSession) spawn(args);
     launchApp(this.num).then(()=>{
       this.sendResponse(response);
     });
@@ -106,7 +108,6 @@ export class DebugSession extends LoggingDebugSession {
       response.body = {stackFrames: stack, totalFrames: stack.length};
       this.sendResponse(response);
     });
-		
 	}
 
   protected scopesRequest(response: DebugProtocol.ScopesResponse,args: DebugProtocol.ScopesArguments): void {
@@ -129,7 +130,6 @@ export class DebugSession extends LoggingDebugSession {
       response.body = {
         variables: variables,
       };
-
       this.sendResponse(response);
     });
   }
@@ -187,20 +187,20 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
-      getThreads().then((threads:Map<string,any[]>) => {
-        let sessionThreads = threads.get(this.name)
-        if(sessionThreads){
-          let resultThreads:Thread[] = []
-          sessionThreads.forEach((thread)=>{
-            resultThreads.push(new Thread(thread.id, thread.name));
-            
-          });
-          response.body = {
-            threads:  resultThreads,
-          };
-        }
-        this.sendResponse(response);
-      });
+    getThreads().then((threads:Map<string,any[]>) => {
+      //only return threads for the application
+      let sessionThreads = threads.get(this.name)
+      if(sessionThreads){
+        let resultThreads:Thread[] = []
+        sessionThreads.forEach((thread)=>{
+          resultThreads.push(new Thread(thread.id, thread.name));
+        });
+        response.body = {
+          threads:  resultThreads,
+        };
+      }
+      this.sendResponse(response);
+    });
   }
   
   protected evaluateRequest(response: DebugProtocol.EvaluateResponse, args: DebugProtocol.EvaluateArguments): void {
@@ -236,9 +236,5 @@ export class DebugSession extends LoggingDebugSession {
         break;
       }
     }
-  }
-
-  public getNumber():number{
-    return this.num;
   }
 }
