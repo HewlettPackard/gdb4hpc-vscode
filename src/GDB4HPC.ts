@@ -88,7 +88,6 @@ export class GDB4HPC extends EventEmitter {
   }
 
   public launchApp(num:number):  Promise<boolean> {
-    console.error("in launchApp")
     let app = this.apps[num];
     return new Promise(resolve => {
       this.sendCommand(`launch $`+ app.procset + ` ` + app.program + ` ` + app.args).then(()=>{
@@ -252,9 +251,7 @@ export class GDB4HPC extends EventEmitter {
             case 'end-stepping-range':
               const fullName=record.info?.get('frame')["fullname"];
               const line = parseInt(record.info?.get('frame')["line"]);
-              console.error("apps event:",this.apps)
               let i = this.apps.findIndex(app=>app.name==procset);
-              console.warn("index:",i)
               if(i>=0&&i<this.apps.length){
                 this.apps[i].line=line;
                 this.apps[i].file=fullName;
@@ -301,16 +298,12 @@ export class GDB4HPC extends EventEmitter {
     if(event=='exited-normally'){
       this.emit('exited-normally')
     }else if(event=='breakpoint-hit'|| event=='end-stepping-range'){
-      //console.error("event:",event, procset, group)
-      //console.error("threads:", this.threads)
       let threads = this.getSessionThreads(procset);
       if (threads.length>0){
         threads.forEach ((thread, index)=>{
-          //let a = this.checkSubset(this.focused.procset,thread.procset, thread.group);
             this.emit(event,index,procset,group);
         });
       }else{
-        console.error("threads not set",this.focused)
         let groupArr = this.getGroupArray(group);
         for (let i =1; i<=groupArr.length; i++){
           this.emit(event,i);
@@ -320,22 +313,18 @@ export class GDB4HPC extends EventEmitter {
   }
 
   public continue(): Promise<any> {
-      console.error("continue")
-      return this.sendCommand('-exec-continue');
+    return this.sendCommand('-exec-continue');
   }
 
   public stepIn(): Promise<any> {
-    console.error("step in")
     return this.sendCommand(`-exec-step`);
   }
 
   public stepOut(): Promise<any> {
-    console.error("step out")
     return this.sendCommand(`-exec-finish`);
   }
 
   public next(): Promise<any> {
-    console.error("next")
     return this.sendCommand(`-exec-next`);
   }
 
@@ -347,18 +336,7 @@ export class GDB4HPC extends EventEmitter {
     return this.sendCommand('-gdb-exit');
   }
 
-  private checkSubset(procset, subsetProcset, subsetGroup):boolean{
-    console.error("procset:",procset," subsetProcset:",subsetProcset," subsetGroup:",subsetGroup)
-    let parentGroup=procset[subsetProcset]
-    if (!parentGroup) return false
-    console.error("parentGroup:",parentGroup)
-    return subsetGroup.every((el) => {
-        return parentGroup.includes(el)
-    })
-  }
-
   public getThreads(): Promise<Map<string, DbgThread[]>> { 
-    console.error("in getTheads")
     return new Promise(resolve => {
       this.sendCommand('-thread-info').then((record: Record) => {
         let results:Map<string, DbgThread[]> = new Map<string,DbgThread[]>(); 
@@ -387,7 +365,6 @@ export class GDB4HPC extends EventEmitter {
               arr=[...arr,...<[]>results.get(key)]
               this.threads.set(key,arr);
             }
-            console.error("done threads:", [...this.threads])
           };
         }
         resolve(this.threads);
@@ -396,7 +373,6 @@ export class GDB4HPC extends EventEmitter {
   }
 
   public getVariable(name: string): DbgVar | undefined {
-    //console.error("in getVariables")
     let variable = this.findVariable(name);
     if (!variable){
       this.createVariable(name).then((v) => {
@@ -430,7 +406,6 @@ export class GDB4HPC extends EventEmitter {
 
   //send var-create command to gdb4hpc and retreive output
   private createVariable(name: string): Promise<DbgVar> {
-    console.error("in createVariable")
     return new Promise(resolve => {
       this.sendCommand(`-var-create - * "${name}"`).then((recordVariable) => {
         let variables_match = this.parseVariableRecord(recordVariable.info!.get('value'));
@@ -467,7 +442,6 @@ export class GDB4HPC extends EventEmitter {
           //get saved variable and update it
           let variable = this.findVariable(variableRecord.name);
           if (!variable) return resolve(this.variables)
-          //console.error("before updating var: ", variable)
           let variables_match = this.parseVariableRecord(variableRecord.value);
           variables_match.forEach(variable_match =>{
             //find saved variable corresponding to variable being updated from mi message
@@ -477,47 +451,16 @@ export class GDB4HPC extends EventEmitter {
             //if variable has a value stored for matching procset and group, update the value
             //otherwise add it
             if (found){
-              //console.error("found",found);
               found.value = variable_match['value']
             }else{
               variable!.values.push({'procset':variable_match['procset'],'group':variable_match['group'],'value':variable_match['value']})
             }
-            //console.error("done updating var: ", variable)
           })
-          
-          //filter out so any old variable values that were not updated
-          /*variable!.values = variable!.values.filter((el) => {
-            return variables_match.some((f) => {
-              return f.procset === el.procset && f.group === el.group;
-            });
-          });*/
         });
         resolve(this.variables);
       });
     });
   }
-
-  //Converts variable to the debug adapter variable
- /* private convertVariable(variable: DbgVar): Variable[]{
-    const variables: Variable[] = [];
-    if (variable){
-      variable.values.forEach(val => {
-        if (typeof val.value === 'string' && val.value) {
-          val.value = val.value.replace(/\\r/g, ' ').replace(/\\t/g, '\t').replace(/\\v/g, '\v').replace(/\\"/g, '"')
-                                    .replace(/\\'/g, "'").replace(/\\\\/g, '\\').replace(/\\n/g, ' ');
-        }
-
-        if(val.value){
-          let name = variable.name+"("+val.procset+"{"+val.group+"})"
-          const v: DebugProtocol.Variable = new Variable(name, val.value, variable.childNum ? variable.referenceID : 0, variable.referenceID);
-          v.variablesReference = variable.referenceID;
-          v.type = variable.type;
-          variables.push(v);
-        }
-      });
-    }
-    return variables;
-  }*/
   
   //get list of variables from gdb4hpc
   public getVariables(): Promise<DbgVar[]> {
@@ -529,15 +472,9 @@ export class GDB4HPC extends EventEmitter {
             if (!this.findVariable(variable.name)){
               pending.push(this.createVariable(variable.name));
             }
-            });
-            Promise.all(pending).then(() => {
-              this.updateVariables().then(()=>{
-                //let variables: Variable[] = [];
-                /*this.variables.forEach(variable => {
-                  variables = [...variables,...this.convertVariable(variable)??[]];
-                });*/
-                console.error("variables",this.variables) 
-              });
+          });
+          Promise.all(pending).then(() => {
+            this.updateVariables()
           });
         });
         resolve(this.variables); 
@@ -546,44 +483,23 @@ export class GDB4HPC extends EventEmitter {
   }
 
   public stack(startFrame: number, endFrame: number, id:number, session:string): Promise<DebugProtocol.StackFrame[]> {
-    console.error("session",session,"id",id,"threads:",[...this.threads])
     let threads=this.getSessionThreads(session);
-    console.error("app",session,"stack threads", [...threads])
     let requestThread:DbgThread[] = threads.filter((thread)=>thread.id == id);
-    console.error("id",id,"resultThread:",requestThread)
     return new Promise(resolve => {
       this.sendCommand(`-stack-list-frames`).then((record: Record) => {
-        //console.error("msgs:",record.info?.get('msgs'));
         let final:DebugProtocol.StackFrame[] = [];
         record.info?.get('msgs').forEach((message:any)=>{
           let stackResults: DebugProtocol.StackFrame[] = [];
           let msg_procset = message['proc_set'];
           let msg_group = message['group'];
-          /*if(message.proc_set!=requestThread[0].procset){
-            console.error("not right procset")
-            console.error("message:", message)
-            console.error("requestThread:", requestThread)
-            return;
-          }
-          if(!requestThread[0].group.every(rank => this.getGroupArray(message.group).includes(rank))){
-            console.error("not right group")
-            return;
-          }*/
           let stack = message['stack']
-          console.log("message stack",stack)
           for (let i = startFrame; i < Math.min(endFrame, stack.length); i++) {
             let frame = stack[i].frame;
             const sf: DebugProtocol.StackFrame = new StackFrame(i,frame.func,new Source(frame.file,frame.fullname),parseInt(frame.line));
             sf.instructionPointerReference = frame.addr;
             stackResults.push(sf);
           }
-
-          this.stacks?.forEach((value, key) => {
-            console.error("stacks before:",key, value);
-          });
           
-          //this.stacks = this.stacks.filter((stack)=>stack.procset!=message.proc_set)
-          //this.stacks.push(result)
           if (this.stacks.has(msg_procset)){
             this.stacks.get(msg_procset)?.forEach((old:any)=>{
               if (this.getGroupArray(msg_group).includes(old.rank)){
@@ -598,17 +514,9 @@ export class GDB4HPC extends EventEmitter {
             })
             this.stacks.set(msg_procset,appStacks)
           }
-          
-          this.stacks?.forEach((value, key) => {
-            console.error("stacks after:",key, value);
-          });
-          //console.error("stacks:", this.stacks)
-          //result.stack.forEach((stack)=>{
-            //final = [...final, ...stack]
         })
 
         final = this.stacks.get(requestThread[0].procset)?.filter((rankItem)=>requestThread[0].group.includes(rankItem.rank))[0].stack
-        console.error("final:",final)
         resolve(final);
       })
     });
@@ -636,11 +544,9 @@ export class GDB4HPC extends EventEmitter {
     //Send Command to insert new breakpoint
     const insertBkpt = (file: string, line: number): Promise<any> =>{
       // XXX: setting breakpoint pending every time is a hack we have to do until CPE-6345 is implemented
-      console.error("insertBkpt")
       return this.sendCommand("-gdb-set breakpoint pending on")
         .then(() => this.sendCommand(`-break-insert ${file}:${line}`))
         .then((breakpoint: Record) => {
-          console.error("after input")
           const bkpt = breakpoint.info!.get('bkpt');
           if (!bkpt) return;
           this.breakpoints.push({num:parseInt(bkpt.number), bkpt:new Breakpoint(true, bkpt.line),file:file,line:bkpt.line})
@@ -648,7 +554,6 @@ export class GDB4HPC extends EventEmitter {
     }
 
     return new Promise(resolve => {
-      console.error("in promise")
       //gdb4hpc needs to be connected and ready before breakpoints can be set
       if (this.appRunning){
         const intv = setInterval(() => {
@@ -693,12 +598,10 @@ export class GDB4HPC extends EventEmitter {
 	}
 
   public changeFocus(input: string): Promise<boolean> {
-    console.error("in change Focus")
     return new Promise(resolve => {
       this.sendCommand(`-procset-focus $${input}`).then((record: Record) => {
         let name = record.info?.get('focus')['name'];
         let procsets = record.info?.get('focus')['proc_set']
-        console.error("name:",name)
         if(name)this.setFocus(name,procsets);
         resolve(true);
       })
@@ -706,32 +609,24 @@ export class GDB4HPC extends EventEmitter {
 	}
 
   private setFocus(name:string,procsets:string){
-    console.error("focusing:",name," procsets:",procsets)
     this.focused.name = name
     this.focused.procset={};
     if(name =="all"){
-      console.error("all")
       let merged:any = []
       for(let i =0; i<this.launchCount;i++){
-        console.error("apps:",this.apps,"count:",this.launchCount)
         merged.push(this.apps[i].procset);
       }
       procsets=merged.toString();
     }
-    console.error("procsets: ",procsets)
     let items = procsets.split(/\,/)
     items.forEach(item=>{
-      console.error("item",item)
       let split = item.split(/\{|\}/)
-      console.error(split)
       this.focused.procset[split[0]]=this.getGroupArray(split[1])
     })
-    console.error("focused:",this.focused)
   }
 
   private getGroupArray(group:string):number[]{
     let g: number[] =[];
-    //console.error("group:",group)
     if(!group){
       return [];
     }
@@ -841,7 +736,6 @@ export class GDB4HPC extends EventEmitter {
   }
 
   public getSessionThreads(session:string): DbgThread[]{
-    console.error("in getSessionThreads")
     if(this.threads.has(session)){
       return this.threads.get(session)!
     }else{

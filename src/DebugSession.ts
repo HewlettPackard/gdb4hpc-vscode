@@ -36,7 +36,6 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments) {
-    console.error("initialize request");
     const refreshFocusEvent = { event: "refreshFocus"} as DebugProtocol.Event;
 
     //only let one debug console print output
@@ -85,7 +84,6 @@ export class DebugSession extends LoggingDebugSession {
 	}
 
   protected async launchRequest( response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
-    console.error("launch request");
     await this._configurationDone.wait(1000);
     if(!vscode.debug.activeDebugSession)spawn(args);
     launchApp(this.num).then(()=>{
@@ -104,10 +102,7 @@ export class DebugSession extends LoggingDebugSession {
 		const maxLevels = typeof args.levels === 'number' ? args.levels : 1000;
 		const endFrame = startFrame + maxLevels;
 
-    console.warn("threadId:",args.threadId,"session:",this.name)
-
 		stack(startFrame, endFrame,args.threadId,this.name).then((stack: DebugProtocol.StackFrame[]) => {
-      console.warn("threadId:",args.threadId,"session:",this.name)
       response.body = {stackFrames: stack, totalFrames: stack.length};
       this.sendResponse(response);
     });
@@ -122,9 +117,7 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments) {
-    console.error("variablesRequest");
     getVariables().then((vars: DbgVar[]) => {
-      console.error("getVars:",vars);
       let variables: Variable[] = [];
       let filtered=[...vars];
       filtered.forEach((variable)=>{
@@ -194,12 +187,8 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
-    console.error("thread");
-    console.error("thread request:",this.name," ",this.num)
       getThreads().then((threads:Map<string,any[]>) => {
-        console.error("thread request threads:", [...threads])
         let sessionThreads = threads.get(this.name)
-        console.error("filtered",sessionThreads)
         if(sessionThreads){
           let resultThreads:Thread[] = []
           sessionThreads.forEach((thread)=>{
@@ -209,7 +198,6 @@ export class DebugSession extends LoggingDebugSession {
           response.body = {
             threads:  resultThreads,
           };
-          console.error("response",response);
         }
         this.sendResponse(response);
       });
@@ -222,7 +210,6 @@ export class DebugSession extends LoggingDebugSession {
         let new_var = getVariable(args.expression);
         new_var?new_var.values = new_var.values.filter((item)=>item.procset==this.name):null;
         let variable_array = new_var?this.convertVariable(new_var):[];
-        console.error("var array:",variable_array);
         variable_array!.forEach(variable =>  {
           response.body = {
             result: variable!.value?variable!.value:'',
@@ -248,14 +235,6 @@ export class DebugSession extends LoggingDebugSession {
         // no need to catch the output, console output events will automatically be caught and routed
         break;
       }
-    }
-  }
-
-  protected customRequest(command: string, response: DebugProtocol.Response, args: any, request?: DebugProtocol.Request): void {
-    switch(command){
-      case "threads":
-        console.error("msg:",response)
-        
     }
   }
 
