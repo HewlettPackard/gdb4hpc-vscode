@@ -1,6 +1,7 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
+import { runCompare } from './extension';
 
 export var compare_list: any[] =[];
 
@@ -11,8 +12,7 @@ export class CompareProvider implements vscode.WebviewViewProvider {
 	public _view: vscode.WebviewView;
 
 	constructor(
-		private readonly _extensionUri: vscode.Uri,
-		private readonly session: any
+		private readonly _extensionUri: vscode.Uri
 	) {	}
 
 	public resolveWebviewView(webviewView: vscode.WebviewView,context: vscode.WebviewViewResolveContext,_token: vscode.CancellationToken) {
@@ -55,7 +55,7 @@ export class CompareProvider implements vscode.WebviewViewProvider {
   }
 
 	runComparisons(){
-		this.session.gdb4hpc.runComparisons().then(()=>{
+		runCompare().then(()=>{
 			this._view?.webview.postMessage({type:'comparesUpdated', value: compare_list});
 		});
 	}
