@@ -1,11 +1,11 @@
-// Copyright 2024 Hewlett Packard Enterprise Development LP.
+// Copyright 2025 Hewlett Packard Enterprise Development LP.
 
 import {DebugProtocol} from '@vscode/debugprotocol';
 import { InitializedEvent, LoggingDebugSession, OutputEvent, Scope, Handles, 
   StoppedEvent,InvalidatedEvent,TerminatedEvent,Thread, Variable} from '@vscode/debugadapter';
 import { Subject } from 'await-notify';
 import { continue_cmd, next_cmd, pause_cmd, stepIn_cmd, stepOut_cmd, setBreakpoints, terminate_cmd,on_cmd,
-  getThreads, stack, getVariables, spawn, launchApp, sendCommand, isStarted, writeToPty, getVariable } from './extension';
+  getThreads, stack, getVariables, spawn, launchApp, sendCommand, getVariable} from './extension';
 import { DbgVar } from './GDB4HPC';
 import * as vscode from 'vscode';
 
@@ -16,6 +16,7 @@ export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArgu
   apps: any[];
   name: string;
   setupCommands: string[];
+  connConfig: any;
   env: any;
   request: any;
 }
@@ -85,16 +86,29 @@ export class DebugSession extends LoggingDebugSession {
 	}
 
   //launch gdb4hpc if nothing is active, otherwise launch an application
-  protected async launchRequest( response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
-    await this._configurationDone.wait(1000);
-    if(!vscode.debug.activeDebugSession) spawn(args);
-    launchApp(this.num).then(()=>{
-      this.sendResponse(response);
-    });
+  protected launchRequest( response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
+    if(!vscode.debug.activeDebugSession){
+      spawn(args).then(()=>{
+        launchApp(this.num).then(()=>{
+          this.sendResponse(response);
+        });
+      })
+    }else{
+      launchApp(this.num).then(()=>{
+        this.sendResponse(response);
+      });
+    }
   }
 
+  protected async sourceRequest(response: DebugProtocol.SourceResponse, args: DebugProtocol.SourceArguments, request?: DebugProtocol.Request): Promise<void> {
+    this.sendResponse(response)
+  }
+  
   protected setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments): void {
-    setBreakpoints(args.source.path || '', args.breakpoints || []).then(() => {
+    setBreakpoints(args.source.path || '', args.breakpoints || []).then((res) => {
+      response.body = {
+        breakpoints: res
+      }
       this.sendResponse(response);
     });
   }
@@ -226,10 +240,6 @@ export class DebugSession extends LoggingDebugSession {
         break;
       }
       case 'repl': {
-        if(!isStarted()){
-          writeToPty(args.expression);
-          break;
-        }
         // this is where text entered in the debug console ends up. send the command to gdb4hpc.
         sendCommand(args.expression);
         // no need to catch the output, console output events will automatically be caught and routed
