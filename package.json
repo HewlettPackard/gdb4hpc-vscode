@@ -167,7 +167,7 @@
                   "host": "",
                   "port": "",
                   "username":"",
-                  "privateKeyPath": ""
+                  "privateKey": ""
                 }
               }
             }
@@ -185,7 +185,7 @@
               "host": "",
               "port": "",
               "username":"",
-              "privateKeyPath": ""
+              "privateKey": ""
             },
             "apps": [
               {

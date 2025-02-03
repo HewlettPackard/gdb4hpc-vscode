@@ -1,4 +1,4 @@
-// Copyright 2025 Hewlett Packard Enterprise Development LP.
+// Copyright 2024-2025 Hewlett Packard Enterprise Development LP.
 
 import {DebugProtocol} from '@vscode/debugprotocol';
 import { InitializedEvent, LoggingDebugSession, OutputEvent, Scope, Handles, 

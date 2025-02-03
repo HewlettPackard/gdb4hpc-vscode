@@ -1,4 +1,4 @@
-// Copyright 2025 Hewlett Packard Enterprise Development LP.
+// Copyright 2024-2025 Hewlett Packard Enterprise Development LP.
 
 import * as ssh from 'ssh2'
 import * as pty from 'node-pty'
@@ -6,6 +6,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import * as vscode from 'vscode'
+import { setTimeout } from 'timers';
 
 let shellStream:any = null;
 let remote: boolean;
@@ -85,8 +86,16 @@ async function copyFileSFTP(file):Promise<string>{
   ensureDirExists(localPath)
   file_map[file]=localPath
   return await new Promise(async (resolve,reject)=>{
-    sftp_conn.fastGet(file, localPath,()=>{})
-    resolve(localPath)
+    let timedOut = false;
+    const timeoutId = setTimeout(()=>{
+      timedOut=true;
+      reject(new Error('fastGet timed out'))
+    },120000)
+    sftp_conn.fastGet(file, localPath,(err)=>{
+      if (timedOut) return;
+      clearTimeout(timeoutId)
+      err? reject(err):resolve(localPath);
+    })
   })
 }
 

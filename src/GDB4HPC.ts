@@ -1,4 +1,4 @@
-// Copyright 2025 Hewlett Packard Enterprise Development LP.
+// Copyright 2024-2025 Hewlett Packard Enterprise Development LP.
 
 import {EventEmitter} from 'events';
 import * as vscode from 'vscode';
@@ -9,6 +9,7 @@ import {DebugProtocol} from '@vscode/debugprotocol';
 import {Record, MIParser} from './MIParser';
 import { compare_list } from './CompareProvider';
 import {writeToShell, startConnection, getRemoteFile, displayFile} from './Connection'
+import { readFileSync } from 'fs';
 
 export var pe_list: Procset[] = [];
 
@@ -75,7 +76,7 @@ export class GDB4HPC extends EventEmitter {
       host: args.connConfig.host,
       port: args.connConfig.port,
       username: args.connConfig.username,
-      privateKeyPath: args.connConfig.privateKeyPath
+      privateKey: readFileSync(args.connConfig.privateKey)
     }:{
       name: 'xterm-color',
       cols: 80,
@@ -83,6 +84,7 @@ export class GDB4HPC extends EventEmitter {
       cwd: this.cwd,
       env: Object.assign(this.environmentVariables, process.env, this.appendedVars)
     }
+    console.warn(this.connConfig)
     this.appendedVars=[];
     this.focused.name = "";
     this.focused.procset = {};
