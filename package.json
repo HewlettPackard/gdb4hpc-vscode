@@ -37,14 +37,15 @@
     "@vscode/debugadapter": "^1.64.0",
     "@vscode/debugprotocol": "^1.64.0",
     "await-notify": "^1.0.1",
-    "node-pty": "^1.0.0"
+    "node-pty": "^1.0.0",
+    "ssh2": "^1.16.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
     "@vscode/vsce": "^2.31.0",
     "esbuild": "^0.19.12",
-    "typescript": "^5.3.3",
-    "rimraf": "^6.0.1"
+    "rimraf": "^6.0.1",
+    "typescript": "^5.3.3"
   },
   "main": "./dist/extension.js",
   "activationEvents": [
@@ -152,10 +153,22 @@
                 "description": "Environment variables to set in debugger shell",
                 "default": {}
               },
-              "setupCommands":{
+              "setupCommands": {
                 "type": "array",
                 "description": "Commands to run in terminal before gdb4hpc starts",
-                "default": ["module load gdb4hpc"]
+                "default": [
+                  "module load gdb4hpc"
+                ]
+              },
+              "connConfig": {
+                "type": "object",
+                "description": "ssh information",
+                "default": {
+                  "host": "",
+                  "port": "",
+                  "username":"",
+                  "privateKey": ""
+                }
               }
             }
           }
@@ -165,7 +178,15 @@
             "type": "gdb4hpc",
             "request": "launch",
             "name": "GDB4HPC",
-            "setupCommands": ["module load gdb4hpc"],
+            "setupCommands": [
+              "module load gdb4hpc"
+            ],
+            "connConfig": {
+              "host": "",
+              "port": "",
+              "username":"",
+              "privateKey": ""
+            },
             "apps": [
               {
                 "procset": "App0{1}",

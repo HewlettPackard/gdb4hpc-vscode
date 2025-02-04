@@ -1,14 +1,15 @@
-// Copyright 2024 Hewlett Packard Enterprise Development LP.
+// Copyright 2024-2025 Hewlett Packard Enterprise Development LP.
 
 import {EventEmitter} from 'events';
+import * as vscode from 'vscode';
+import {clearInterval} from 'timers';
 import {ILaunchRequestArguments} from './DebugSession';
 import {Breakpoint, Source, StackFrame} from '@vscode/debugadapter';
 import {DebugProtocol} from '@vscode/debugprotocol';
 import {Record, MIParser} from './MIParser';
-import * as vscode from 'vscode';
-import * as pty from 'node-pty';
-import {clearInterval} from 'timers';
 import { compare_list } from './CompareProvider';
+import {writeToShell, startConnection, getRemoteFile, displayFile} from './Connection'
+import { readFileSync } from 'fs';
 
 export var pe_list: Procset[] = [];
 
@@ -46,7 +47,6 @@ export class GDB4HPC extends EventEmitter {
   public apps: any;
   private environmentVariables: string[];
   private setupCommands: string[];
-  private gdb4hpcPty: any;
   private output_panel: vscode.OutputChannel;
   private mi_log: vscode.OutputChannel;
   private error_log: vscode.OutputChannel;
@@ -63,12 +63,28 @@ export class GDB4HPC extends EventEmitter {
   private appendedVars: string[];
   private started: boolean;
   private launchCount:number =0;
+  private remote:boolean = true;
+  private connConfig = {};
 
   //spawn gdb4hpc
-  public spawn(args: ILaunchRequestArguments): void {
+  public spawn(args: ILaunchRequestArguments): Promise<boolean>  {
     this.started = false;
     this.cwd = args.cwd || '';
     this.environmentVariables = args.env || [];
+    this.remote = args.connConfig.host?true:false
+    this.connConfig = args.connConfig.host?{
+      host: args.connConfig.host,
+      port: args.connConfig.port,
+      username: args.connConfig.username,
+      privateKey: readFileSync(args.connConfig.privateKey)
+    }:{
+      name: 'xterm-color',
+      cols: 80,
+      rows: 30,
+      cwd: this.cwd,
+      env: Object.assign(this.environmentVariables, process.env, this.appendedVars)
+    }
+    console.warn(this.connConfig)
     this.appendedVars=[];
     this.focused.name = "";
     this.focused.procset = {};
@@ -84,7 +100,11 @@ export class GDB4HPC extends EventEmitter {
     this.output_panel = vscode.window.createOutputChannel("Program Output")
     this.mi_log = vscode.window.createOutputChannel("MI Log");
     this.error_log = vscode.window.createOutputChannel("Error Log");
-    this.createPty();
+    return new Promise(resolve => {
+      this.createStream().then(()=>{
+        resolve(true)
+      })
+    })
   }
 
   //launch applications
@@ -93,79 +113,77 @@ export class GDB4HPC extends EventEmitter {
     return new Promise(resolve => {
       this.sendCommand(`launch $`+ app.procset + ` ` + app.program + ` ` + app.args).then(()=>{
         this.setFocus("all","")
+        this.launchCount ++;
+        this.appRunning= true;
+        Promise.all(this.cmdPending).then(() => {
+          resolve(true); 
+        });
       })
-      this.launchCount ++;
-      this.appRunning= true;
-      resolve(true); 
     });
   }
 
-  //create pty to connect gdb4hpc to vscode
-  private createPty(): Promise<boolean> {
-    return new Promise(resolve => {
-      this.gdb4hpcPty = pty.spawn('bash', [], {
-        name: 'xterm-color',
-        cols: 80,
-        rows: 30,
-        cwd: this.cwd,
-        env: Object.assign(this.environmentVariables, process.env, this.appendedVars)
-      });
-      
-      this.gdb4hpcPty.onData(data => {
-        data = data.replace("dbg all> ","");
-        //remove color codes
-        data = data.replaceAll("\x1b[0m","");
-        data = data.replaceAll("\x1b[30;1m","");
+  //create shell stream to connect gdb4hpc to vscode
+  private createStream(): Promise<boolean> {
 
-        //check to see gdb4hpc is running, if so launch program
-        if (!this.isStarted() && data.toString().startsWith("mi:")){
+    //callback for handling data
+    let onData = (data) =>{
+      //remove color codes
+      data = data.toString()
+      data = data.replaceAll("\x1b[0m","");
+      data = data.replaceAll("\x1b[30;1m","");
+      data = data.replace("dbg all> ","");
+
+      //check to see gdb4hpc is running, if so launch program
+      if (!this.isStarted()){
+        if(data.includes("(gdb)")){
           this.started = true;
-          this.handleOutput(data);
-          return;
+          return true;
         }
-        this.handleOutput(data);
-      });
+      }
+      this.handleOutput(data);
+    }
 
-      this.gdb4hpcPty.onExit((e) => { 
-        this.output_panel.dispose();
-        this.mi_log.dispose();
-      });
+    //callback to close gdb4hpc connection
+    let onClose = () =>{
+      this.output_panel.dispose();
+      this.mi_log.dispose();
+    }
+
+    //setup local/remote connection
+    return new Promise(resolve => {
+      startConnection(this.remote,this.connConfig,onData,onClose).then(()=>{
+        resolve(true)
+      })
 
       //if setupCommands are provided, use them to launch gdb4hpc
       if (this.setupCommands.length>0){
         this.setupCommands.forEach(item => {
-          this.gdb4hpcPty.write(`${item}\n`)
+          writeToShell(`${item}\n`)
         });
-        this.gdb4hpcPty.write(`gdb4hpc --interpreter=mi\n`);
+        writeToShell(`gdb4hpc --interpreter=mi\n`);
       }else{
         vscode.window.showInformationMessage("Please add setupCommands or launch gdb4hpc in the Debug Console")
       }
-   
-      resolve(true)
     });
   }
 
-  //write commands from Debug Console to PTY
-  public writeToPty(command: string){
-    if (command.startsWith("gdb4hpc")){
-      //start gdb4hpc
-      this.gdb4hpcPty.write(`${command} --interpreter=mi\n`);
-    }else{
-      this.gdb4hpcPty.write(`${command}\n`);
-    }
-  }
-  
-  //send command to gdb4hpc and get the parsed output back
+  //send command to shell and get the parsed output back
   public sendCommand(command: string): Promise<any> {
     return new Promise(resolve => {
-      if (!command.includes("-")) {
-        command = `${command}\n`;
-        this.gdb4hpcPty.write(command);
+      if (!this.isStarted()){
+        if (command.startsWith("gdb4hpc")){
+          //start gdb4hpc with the interpreter set to mi
+          writeToShell(`${command} --interpreter=mi\n`);
+        }else{
+          writeToShell(`${command}\n`);
+        }
+      }
+      else if (!command.startsWith("-")) {
+        writeToShell(`${command}\n`);
         resolve(true);
       }
       else {
-        command = `${this.token +command}\n`;
-        this.gdb4hpcPty.write(command);
+        writeToShell(`${this.token + command}\n`);
         //once token is found the parsed record is sent back to the function that called the command
         this.cmdPending.push({token: this.token, res: ((record: Record) => {
           resolve(record);
@@ -258,13 +276,11 @@ export class GDB4HPC extends EventEmitter {
               if(i>=0&&i<this.apps.length){
                 this.apps[i].line=line;
                 this.apps[i].file=fullName;
-
-                console.warn(this.apps[i]);
               }
 
               //open file and line if it's in the active debug session
               if(vscode.debug.activeDebugSession?.name==procset){
-                this.openToFile(line,fullName);
+                displayFile(line,fullName);
               }
               break;
 
@@ -281,20 +297,6 @@ export class GDB4HPC extends EventEmitter {
       case 'running':
         this.appRunning = true;
         break;
-    }
-  }
-
-  //point to the current line in the current file
-  public openToFile(line:number, file:string){
-    if(file.length>0&&line>0){
-      var openPath = vscode.Uri.file(file); 
-      vscode.workspace.openTextDocument(openPath).then(doc => {
-        vscode.window.showTextDocument(doc).then(editor => {
-          let range = editor.document.lineAt(line-1).range;
-         // editor.selection =  new vscode.Selection(range.start, range.end);
-          editor.revealRange(range);
-        });
-      });
     }
   }
 
@@ -502,7 +504,7 @@ export class GDB4HPC extends EventEmitter {
           let stack = message['stack']
           for (let i = startFrame; i < Math.min(endFrame, stack.length); i++) {
             let frame = stack[i].frame;
-            const sf: DebugProtocol.StackFrame = new StackFrame(i,frame.func,new Source(frame.file,frame.fullname),parseInt(frame.line));
+            const sf: DebugProtocol.StackFrame = new StackFrame(i,frame.func,new Source(frame.file,frame.fullname,1),parseInt(frame.line));
             sf.instructionPointerReference = frame.addr;
             stackResults.push(sf);
           }
@@ -559,11 +561,12 @@ export class GDB4HPC extends EventEmitter {
         .then((breakpoint: Record) => {
           const bkpt = breakpoint.info!.get('bkpt');
           if (!bkpt) return;
-          this.breakpoints.push({num:parseInt(bkpt.number), bkpt:new Breakpoint(true, bkpt.line),file:file,line:bkpt.line})
+          this.breakpoints.push({num:parseInt(bkpt.number), bkpt:new Breakpoint(true, bkpt.line,undefined, new Source(file,file)),file:file,line:bkpt.line})
       });
     }
 
     return new Promise(resolve => {
+      file=this.remote?getRemoteFile(file):file
       //gdb4hpc needs to be connected and ready before breakpoints can be set
       if (this.appRunning){
         const intv = setInterval(() => {
@@ -763,10 +766,18 @@ export class GDB4HPC extends EventEmitter {
 
   
   public getCurrentLine(app:number):number{
-    return this.apps[app].line??0;
+    if(this.apps[app].line){
+      return this.apps[app].line
+    }else{
+      return 0
+    }
   }
 
   public getCurrentFile(app:number):string{
-    return this.apps[app].file??"";
+    if(this.apps[app].file){
+      return this.apps[app].file
+    }else{
+      return ""
+    }
   }
 }

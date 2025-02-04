@@ -10,6 +10,7 @@ import { CompareProvider } from './CompareProvider';
 import { AssertionProvider } from './AssertionProvider';
 import { DecompositionProvider } from './DecompostionProvider';
 import { GDB4HPC } from './GDB4HPC';
+import { displayFile } from './Connection';
 
 export let gdb4hpc=new GDB4HPC;
 export let debugSessions:vscode.DebugSession[] = [];
@@ -125,7 +126,7 @@ export function activate(context: vscode.ExtensionContext) {
       let i = debugSessions.findIndex(dbgsess=>dbgsess.name === session.name)
       let line = gdb4hpc.getCurrentLine(i);
       let file = gdb4hpc.getCurrentFile(i);
-      gdb4hpc.openToFile(line,file);
+      displayFile(line,file);
     }
   })
 }
@@ -232,14 +233,6 @@ export function spawn(args){
 
 export function sendCommand(expression){
   return gdb4hpc.sendCommand(expression)
-}
-
-export function writeToPty(expression){
-  return gdb4hpc.writeToPty(expression)
-}
-
-export function isStarted(){
-  return gdb4hpc.isStarted()
 }
 
 export function on_cmd(event, callback){
