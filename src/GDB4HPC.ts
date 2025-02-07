@@ -65,6 +65,14 @@ export class GDB4HPC extends EventEmitter {
   private launchCount:number =0;
   private remote:boolean = true;
   private connConfig = {};
+  private runningCommands: { [key: string]: Promise<any>|null } = {
+    '-thread-info':null,
+    '-stack-list-frames':null,
+    '-decomposition-list':null,
+    '-procset-list':null,
+    '-var-update --all-values *':null,
+    '-stack-list-variables':null
+  }
 
   //spawn gdb4hpc
   public spawn(args: ILaunchRequestArguments): Promise<boolean>  {
@@ -167,8 +175,29 @@ export class GDB4HPC extends EventEmitter {
     });
   }
 
+  //intercept commands before sending to gdb4hpc in case of duplicates
+  public sendCommand(command:string): Promise<any> { 
+    //if not in list send command and return promise as normal
+    if(!(command in this.runningCommands)){
+      return this.send(command);
+    }
+
+    //if in list and not null, it's already started so return the running promise
+    if(this.runningCommands[command]){
+      return this.runningCommands[command];
+    }
+
+    //otherwise send the command to gdb4hpc
+    this.runningCommands[command] = this.send(command).finally(()=>{
+      this.runningCommands[command] = null;
+    })
+
+    //return for the call that started the command run
+    return this.runningCommands[command];
+  }
+
   //send command to shell and get the parsed output back
-  public sendCommand(command: string): Promise<any> {
+  private send(command: string): Promise<any> {
     return new Promise(resolve => {
       if (!this.isStarted()){
         if (command.startsWith("gdb4hpc")){
