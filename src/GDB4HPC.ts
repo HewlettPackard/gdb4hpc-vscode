@@ -97,7 +97,7 @@ export class GDB4HPC extends EventEmitter {
       cwd: this.cwd,
       env: Object.assign(this.environmentVariables, process.env, this.appendedVars)
     }
-    console.warn(this.connConfig)
+
     this.appendedVars=[];
     this.focused.name = "";
     this.focused.procset = {};
@@ -459,7 +459,6 @@ export class GDB4HPC extends EventEmitter {
       procset: procset,
       group: this.getGroupArray(group)
     };
-    console.warn("adding new var",newVariable)
     this.variables.push(newVariable);
     return newVariable
   }
@@ -517,17 +516,9 @@ export class GDB4HPC extends EventEmitter {
   public getVariables(): Promise<DbgVar[]> {
     return new Promise(resolve => {
       this.sendCommand(`-stack-list-variables`).then((record: Record) => {
-        /*this.variables = this.variables.filter(var1 =>
-          record.info?.get('variables').some(var2 => 
-            (var1.referenceID!==0)
-            ||!(var1.name === var2.name && var1.procset === var2.proc_set && var1.group === var2.group && var1.referenceID === 0)
-          )
-        );*/
-        console.warn("starting",this.variables,record.info?.get('variables'))
         record.info?.get('variables').forEach(variable => {
           let found = this.variables.filter((var1) => variable.name === var1.name || variable.referenceName === var1.name);
           if (found.length>0){
-            console.warn("in if found",found)
             found.forEach((found_var)=>{
               if(found_var.procset==variable.proc_set){
                 //remove ranks from old variables if they already exist
@@ -543,12 +534,10 @@ export class GDB4HPC extends EventEmitter {
             //remove variables that have empty groups
             this.variables = this.variables.filter((var2) => var2.group.length > 0);
           }else{
-            console.warn("in else not found")
             //add a new variable
             this.addNewVariable(variable.name, variable.name, 0, 0, variable.type, variable.value,variable.proc_set,variable.group)
           }
         });
-        console.warn("ending",this.variables)
         resolve(this.variables); 
       });
     });
