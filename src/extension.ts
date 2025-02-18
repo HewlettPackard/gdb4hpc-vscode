@@ -123,9 +123,8 @@ export function activate(context: vscode.ExtensionContext) {
   vscode.debug.onDidChangeActiveDebugSession(async(session:vscode.DebugSession|undefined)=>{
     if (session){
       if(debugSessions.length==0) debugSessions.push(session)
-      let i = debugSessions.findIndex(dbgsess=>dbgsess.name === session.name)
-      let line = gdb4hpc.getCurrentLine(i);
-      let file = gdb4hpc.getCurrentFile(i);
+      let line = gdb4hpc.getCurrentLine(session.name);
+      let file = gdb4hpc.getCurrentFile(session.name);
       displayFile(line,file);
     }
   })
@@ -223,8 +222,8 @@ export function getVariables(){
   return gdb4hpc.getVariables()
 }
 
-export function getVariable(expression){
-  return gdb4hpc.getVariable(expression)
+export function evaluateVariable(expression){
+  return gdb4hpc.evaluateVariable(expression)
 }
 
 export function spawn(args){
