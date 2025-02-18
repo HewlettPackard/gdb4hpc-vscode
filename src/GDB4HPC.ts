@@ -10,6 +10,7 @@ import {Record, MIParser} from './MIParser';
 import { compare_list } from './CompareProvider';
 import {writeToShell, startConnection, getRemoteFile, displayFile} from './Connection'
 import { readFileSync } from 'fs';
+import { app } from './extension';
 
 export var pe_list: Procset[] = [];
 
@@ -19,7 +20,9 @@ export interface DbgVar {
   childNum: number;   //number of children
   referenceID: number;  //scope tracking id
   type: string;   //variable type
-  values: any[];
+  value: any;
+  procset: string;
+  group: number[];
 }
 
 export interface DbgThread{
@@ -73,6 +76,8 @@ export class GDB4HPC extends EventEmitter {
     '-var-update --all-values *':null,
     '-stack-list-variables':null
   }
+  private lines:any = {};
+  private files:any = {};
 
   //spawn gdb4hpc
   public spawn(args: ILaunchRequestArguments): Promise<boolean>  {
@@ -92,7 +97,7 @@ export class GDB4HPC extends EventEmitter {
       cwd: this.cwd,
       env: Object.assign(this.environmentVariables, process.env, this.appendedVars)
     }
-    console.warn(this.connConfig)
+
     this.appendedVars=[];
     this.focused.name = "";
     this.focused.procset = {};
@@ -104,6 +109,10 @@ export class GDB4HPC extends EventEmitter {
       }
     }
     this.apps = args.apps;
+    this.apps.forEach((app)=>{
+      this.lines[app.name]= 0;
+      this.files[app.name]="";
+    })
     this.setupCommands = args.setupCommands
     this.output_panel = vscode.window.createOutputChannel("Program Output")
     this.mi_log = vscode.window.createOutputChannel("MI Log");
@@ -301,11 +310,8 @@ export class GDB4HPC extends EventEmitter {
             case 'end-stepping-range':
               const fullName=record.info?.get('frame')["fullname"];
               const line = parseInt(record.info?.get('frame')["line"]);
-              let i = this.apps.findIndex(app=>app.name==procset);
-              if(i>=0&&i<this.apps.length){
-                this.apps[i].line=line;
-                this.apps[i].file=fullName;
-              }
+              this.lines[procset]=line;
+              this.files[procset]=fullName;
 
               //open file and line if it's in the active debug session
               if(vscode.debug.activeDebugSession?.name==procset){
@@ -410,19 +416,19 @@ export class GDB4HPC extends EventEmitter {
     });
   }
 
-  public getVariable(name: string): DbgVar | undefined {
-    let variable = this.findVariable(name);
-    if (!variable){
-      this.createVariable(name).then((v) => {
-        return v;
+  public evaluateVariable(name: string): Promise<any> {
+    let variable = this.variables.find((variable) => variable.name === name || variable.referenceName === name);
+    return new Promise(resolve => {
+      if (!variable){
+        this.createVariable(name).then((v) => {
+          resolve(v);
+        });
+      }
+      this.updateVariables().then((variables) => {
+        let result = variables.find((variable)=>variable.name === name)
+        resolve(result);
       });
-    }else{
-      return variable;
-    }
-  }
-
-  private findVariable(name: string): DbgVar | undefined {
-    return this.variables.find((variable) => variable.name === name || variable.referenceName === name);
+    })
   }
 
   //mi variable sends value in format of $a{i}: val\n$b{j}: val\n...etc. 
@@ -442,31 +448,35 @@ export class GDB4HPC extends EventEmitter {
     return(result)
   }
 
+  private addNewVariable(name:string,referenceName:string, childNum:number, referenceID:number, type:string, value:any, procset:string, group:string):DbgVar{
+    const newVariable: DbgVar = {
+      name: name,
+      referenceName: referenceName,
+      childNum: childNum,
+      referenceID: referenceID, 
+      type: type,
+      value: value,
+      procset: procset,
+      group: this.getGroupArray(group)
+    };
+    this.variables.push(newVariable);
+    return newVariable
+  }
+
   //send var-create command to gdb4hpc and retreive output
-  private createVariable(name: string): Promise<DbgVar> {
+  private createVariable(name: string): Promise<DbgVar[]> {
     return new Promise(resolve => {
       this.sendCommand(`-var-create - * "${name}"`).then((recordVariable) => {
         let variables_match = this.parseVariableRecord(recordVariable.info!.get('value'));
         const numchild = parseInt(recordVariable.info!.get('numchild')) || parseInt(recordVariable.info!.get('has_more')) || 0;
         //create an array of values from mi message          
-        
-        let vals:any[]=[];
+        let created:DbgVar[]=[];
         variables_match.forEach(variable=>{
-          vals.push({'procset':variable['procset'],'group':variable['group'],'value':variable['value']})
+          let newVar = this.addNewVariable(name, recordVariable.info!.get('name'), numchild, numchild ? this.variables.length + 1 : 0,
+                             recordVariable.info!.get('type'), variable.value,variable.proc_set,variable.group)
+          created.push(newVar)
         });
-
-        //create a new variable with all of the variations of values in one variable
-        const newVariable: DbgVar = {
-          name: name,
-          referenceName: recordVariable.info!.get('name'),
-          childNum: numchild,
-          referenceID: numchild ? this.variables.length + 1 : 0, 
-          type: recordVariable.info!.get('type'),
-          values: vals
-        };
-
-        this.variables.push(newVariable);
-        resolve(newVariable);
+        resolve(created);
       });
     });
   }
@@ -478,42 +488,55 @@ export class GDB4HPC extends EventEmitter {
         record.info?.get('changelist').forEach(variableRecord => {
 
           //get saved variable and update it
-          let variable = this.findVariable(variableRecord.name);
-          if (!variable) return resolve(this.variables)
+          let variables = this.variables.filter((variable) => variable.name === variableRecord.name || variable.referenceName === variableRecord.name);
+          if (!variables) return resolve(this.variables)
+          //remove the variables whose values have changed
+          this.variables = this.variables.filter((variable) => variable.name !== variableRecord.name && variable.referenceName !== variableRecord.name);
+          //this information should stay constant
+          let name= variables[0].name;
+          let referenceName= variables[0].referenceName;
+          let childNum= variables[0].childNum;
+          let referenceID= variables[0].referenceID;
+          let type= variables[0].type;
+
+          //get the new values for possibly different procsets and groups
           let variables_match = this.parseVariableRecord(variableRecord.value);
           variables_match.forEach(variable_match =>{
             //find saved variable corresponding to variable being updated from mi message
-            let found = variable!.values.find(obj => {
-              return obj.procset === variable_match['procset'] && obj.group === variable_match['group']
-            });
-            //if variable has a value stored for matching procset and group, update the value
-            //otherwise add it
-            if (found){
-              found.value = variable_match['value']
-            }else{
-              variable!.values.push({'procset':variable_match['procset'],'group':variable_match['group'],'value':variable_match['value']})
-            }
+            this.addNewVariable(name, referenceName, childNum, referenceID, type, 
+                                variable_match.value,variable_match.procset,variable_match.group)
           })
         });
         resolve(this.variables);
       });
     });
   }
-  
+
   //get list of variables from gdb4hpc
   public getVariables(): Promise<DbgVar[]> {
     return new Promise(resolve => {
       this.sendCommand(`-stack-list-variables`).then((record: Record) => {
-        record.info?.get('msgs').forEach(message => {
-          const pending: Promise<DbgVar>[] = [];
-          message['variables'].forEach(variable => {
-            if (!this.findVariable(variable.name)){
-              pending.push(this.createVariable(variable.name));
-            }
-          });
-          Promise.all(pending).then(() => {
-            this.updateVariables()
-          });
+        record.info?.get('variables').forEach(variable => {
+          let found = this.variables.filter((var1) => variable.name === var1.name || variable.referenceName === var1.name);
+          if (found.length>0){
+            found.forEach((found_var)=>{
+              if(found_var.procset==variable.proc_set){
+                //remove ranks from old variables if they already exist
+                this.getGroupArray(variable.group).forEach(rank=>{
+                  if(found_var.group.includes(rank)){
+                    found_var.group.splice(found_var.group.indexOf(rank), 1);
+                  }
+                })
+                //add new variable
+              }
+            })
+            this.addNewVariable(variable.name, variable.name, 0, 0, variable.type, variable.value,variable.proc_set,variable.group)
+            //remove variables that have empty groups
+            this.variables = this.variables.filter((var2) => var2.group.length > 0);
+          }else{
+            //add a new variable
+            this.addNewVariable(variable.name, variable.name, 0, 0, variable.type, variable.value,variable.proc_set,variable.group)
+          }
         });
         resolve(this.variables); 
       });
@@ -794,19 +817,11 @@ export class GDB4HPC extends EventEmitter {
   }
 
   
-  public getCurrentLine(app:number):number{
-    if(this.apps[app].line){
-      return this.apps[app].line
-    }else{
-      return 0
-    }
+  public getCurrentLine(app:string):number{
+    return this.lines[app]
   }
 
-  public getCurrentFile(app:number):string{
-    if(this.apps[app].file){
-      return this.apps[app].file
-    }else{
-      return ""
-    }
+  public getCurrentFile(app:string):string{
+    return this.files[app]
   }
 }
