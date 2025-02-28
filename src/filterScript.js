@@ -1,4 +1,4 @@
-// Copyright 2024 Hewlett Packard Enterprise Development LP.
+// Copyright 2025 Hewlett Packard Enterprise Development LP.
 
 //script for Filter webview panel
 (function () {
@@ -6,15 +6,15 @@
 
   const inputField = document.getElementById('filter-input');
 
-  //pe name input box
-  var nameBox = document.createElement('INPUT');
-  nameBox.setAttribute('type', 'text');
-  nameBox.setAttribute('name', "filter-name");
-  nameBox.setAttribute('id',   "filter-name");
-  nameBox.setAttribute('value', "");
-  nameBox.setAttribute('placeholder', "Ranks to filter");
+  //group to filter information for input box
+  var groupBox = document.createElement('INPUT');
+  groupBox.setAttribute('type', 'text');
+  groupBox.setAttribute('name', "filter-name");
+  groupBox.setAttribute('id',   "filter-name");
+  groupBox.setAttribute('value', "");
+  groupBox.setAttribute('placeholder', "Ranks to filter");
 
-  //procset input box
+  //rank to display source code for input box
   var rankBox = document.createElement('INPUT');
   rankBox.setAttribute('type', 'number');
   rankBox.setAttribute('name', "source-rank");
@@ -28,13 +28,13 @@
   selectButton.addEventListener('click', ()=> {
     tsvscode.postMessage({
       command: 'filterGroup',
-      procset: nameBox.value?nameBox.value:null,
+      procset: groupBox.value?groupBox.value:null,
       source_filter: rankBox.value?rankBox.value:null
     });
   })
 
   //append to display
-  inputField.appendChild(nameBox);
+  inputField.appendChild(groupBox);
   inputField.appendChild(rankBox);
   inputField.appendChild(selectButton);
 }());
