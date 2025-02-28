@@ -9,6 +9,7 @@ import { FocusProvider} from './FocusProvider';
 import { CompareProvider } from './CompareProvider';
 import { AssertionProvider } from './AssertionProvider';
 import { DecompositionProvider } from './DecompostionProvider';
+import { FilterProvider } from './FilterProvider';
 import { GDB4HPC } from './GDB4HPC';
 import { displayFile } from './Connection';
 
@@ -65,6 +66,10 @@ export function activate(context: vscode.ExtensionContext) {
   let focusProvider = new FocusProvider(context.extensionUri);
   vscode.window.registerWebviewViewProvider('focusView', focusProvider);
 
+  //Add Filter Panel to sidebar
+  let filterProvider = new FilterProvider(context.extensionUri);
+  vscode.window.registerWebviewViewProvider('filterView', filterProvider);
+
   //Add decomposition panel to sidebar
   let decompositionProvider = new DecompositionProvider(context.extensionUri);
   vscode.window.registerWebviewViewProvider("decompView", decompositionProvider);
@@ -89,7 +94,7 @@ export function activate(context: vscode.ExtensionContext) {
       focusProvider.refresh();
     }
   })); 
-  
+
   //once a debugSession is launched for an app, launch another until all are launched
   vscode.debug.onDidStartDebugSession(async session => {
     if(!debugSessions.some((sess) => session.id == sess.id)){
@@ -146,6 +151,22 @@ class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory 
 }
 
 //functions to access gdb4hpc
+export function getGroupFilter(){
+  return gdb4hpc.getGroupFilter()
+}
+
+export function setGroupFilter(group: string){
+  return gdb4hpc.setGroupFilter(group)
+}
+
+export function getDisplayRank(){
+  return gdb4hpc.getDisplayRank();
+}
+
+export function setDisplayRank(rank:number){
+  return gdb4hpc.setDisplayRank(rank);
+}
+
 export function runAssertScript(assertion: any){
   return gdb4hpc.runAssertionScript(assertion)
 }

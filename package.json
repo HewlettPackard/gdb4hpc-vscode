@@ -80,6 +80,12 @@
         },
         {
           "type": "webview",
+          "id": "filterView",
+          "name": "Display Filter",
+          "contextualTitle": "Display Filter"
+        },
+        {
+          "type": "webview",
           "id": "decompView",
           "name": "Decompositions",
           "contextualTitle": "Decompositions"
