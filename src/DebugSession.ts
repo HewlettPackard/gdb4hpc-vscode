@@ -5,7 +5,7 @@ import { InitializedEvent, LoggingDebugSession, OutputEvent, Scope, Handles,
   StoppedEvent,InvalidatedEvent,TerminatedEvent,Thread, Variable} from '@vscode/debugadapter';
 import { Subject } from 'await-notify';
 import { continue_cmd, next_cmd, pause_cmd, stepIn_cmd, stepOut_cmd, setBreakpoints, terminate_cmd,on_cmd,
-  getThreads, stack, getVariables, spawn, launchApp, sendCommand, evaluateVariable} from './extension';
+  getThreads, stack, getVariables, spawn, launchApp, sendCommand, evaluateVariable, getGroupFilter} from './extension';
 import { DbgVar } from './GDB4HPC';
 import * as vscode from 'vscode';
 
@@ -154,7 +154,7 @@ export class DebugSession extends LoggingDebugSession {
         }
 
         if(var1.value){
-          let name = var1.name+"("+var1.procset+"{"+var1.group+"})"
+          let name = var1.name+"{"+var1.group+"}"
           const v: DebugProtocol.Variable = new Variable(name, var1.value, var1.childNum ? var1.referenceID : 0, var1.referenceID);
           v.variablesReference = var1.referenceID;
           v.type = var1.type;
@@ -216,22 +216,23 @@ export class DebugSession extends LoggingDebugSession {
     switch (args.context) {
       case 'watch':
       case 'hover': {
-        let new_var = evaluateVariable(args.expression);
-        new_var?new_var.value = new_var.value.filter((item)=>item.procset==this.name):null;
-        let variable_array = new_var?this.convertVariable(new_var):[];
-        variable_array!.forEach(variable =>  {
-          response.body = {
-            result: variable!.value?variable!.value:'',
-            variablesReference: variable!.variablesReference,
-          };
+        evaluateVariable(args.expression).then((eval_vars)=>{
+          eval_vars?eval_vars = eval_vars.filter((item)=>item.procset==this.name):null;
+          let variable_array = eval_vars?this.convertVariables(eval_vars):[];
+          variable_array?.forEach(variable =>  {
+            response.body = {
+              result: variable!.value?variable!.value:'',
+              variablesReference: variable!.variablesReference,
+            };
 
-          if (!variable!.value) {
-            response.success = false;
-            response.message = `Variable not found`;
-          }
+            if (!variable!.value) {
+              response.success = false;
+              response.message = `Variable not found`;
+            }
+          });
+          //FIX (PE-53410): only sending first rank available back for now as only one reply is able to be sent
+          this.sendResponse(response);
         });
-        //FIX (PE-53410): only sending first rank available back for now as only one reply is able to be sent
-        this.sendResponse(response);
         break;
       }
       case 'repl': {

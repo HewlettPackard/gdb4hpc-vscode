@@ -10,6 +10,7 @@ src
 !src/compareScript.js
 !src/decompositionScript.js
 !src/focusScript.js
+!src/filterScript.js
 
 out
 .vscode

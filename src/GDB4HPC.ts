@@ -10,7 +10,6 @@ import {Record, MIParser} from './MIParser';
 import { compare_list } from './CompareProvider';
 import {writeToShell, startConnection, getRemoteFile, displayFile} from './Connection'
 import { readFileSync } from 'fs';
-import { app } from './extension';
 
 export var pe_list: Procset[] = [];
 
@@ -68,6 +67,8 @@ export class GDB4HPC extends EventEmitter {
   private launchCount:number =0;
   private remote:boolean = true;
   private connConfig = {};
+  private groupFilter: Set<number>;
+  private rankDisplay: number;
   private runningCommands: { [key: string]: Promise<any>|null } = {
     '-thread-info':null,
     '-stack-list-frames':null,
@@ -132,6 +133,8 @@ export class GDB4HPC extends EventEmitter {
         this.setFocus("all","")
         this.launchCount ++;
         this.appRunning= true;
+        this.groupFilter=new Set();
+        this.rankDisplay=0;      
         Promise.all(this.cmdPending).then(() => {
           resolve(true); 
         });
@@ -305,13 +308,17 @@ export class GDB4HPC extends EventEmitter {
           let reason = record.info?.get('reason');
           let procset = record.info?.get('proc_set');
           let group = record.info?.get('group');
+          let group_arr = this.getGroupArray(record.info?.get('group'));
           switch (reason) {
             case 'breakpoint-hit':
             case 'end-stepping-range':
               const fullName=record.info?.get('frame')["fullname"];
               const line = parseInt(record.info?.get('frame')["line"]);
-              this.lines[procset]=line;
-              this.files[procset]=fullName;
+              let displayRank = this.rankDisplay?this.rankDisplay:0;
+              if (group_arr.includes(Number(displayRank))){
+                this.lines[procset]=line;
+                this.files[procset]=fullName;
+              }
 
               //open file and line if it's in the active debug session
               if(vscode.debug.activeDebugSession?.name==procset){
@@ -416,7 +423,7 @@ export class GDB4HPC extends EventEmitter {
     });
   }
 
-  public evaluateVariable(name: string): Promise<any> {
+  public evaluateVariable(name: string): Promise<DbgVar[]> {
     let variable = this.variables.find((variable) => variable.name === name || variable.referenceName === name);
     return new Promise(resolve => {
       if (!variable){
@@ -425,7 +432,7 @@ export class GDB4HPC extends EventEmitter {
         });
       }
       this.updateVariables().then((variables) => {
-        let result = variables.find((variable)=>variable.name === name)
+        let result = variables.filter((variable)=>variable.name === name)
         resolve(result);
       });
     })
@@ -580,7 +587,8 @@ export class GDB4HPC extends EventEmitter {
         })
 
         //return only the stacks for requested thread
-        final = this.stacks.get(requestThread[0].procset)?.filter((rankItem)=>requestThread[0].group.includes(rankItem.rank))[0].stack
+        let thread_group = new Set(requestThread[0].group)
+        final = this.stacks.get(requestThread[0].procset)?.filter((rankItem)=>thread_group.has(rankItem.rank))[0].stack
         resolve(final);
       })
     });
@@ -823,5 +831,18 @@ export class GDB4HPC extends EventEmitter {
 
   public getCurrentFile(app:string):string{
     return this.files[app]
+  }
+
+  public getGroupFilter():Set<number>{
+    return this.groupFilter
+  }
+  public getDisplayRank():number{
+    return this.rankDisplay;
+  }
+  public setGroupFilter(group:string){
+    this.groupFilter=new Set(this.getGroupArray(group));
+  }
+  public setDisplayRank(num:number){
+    this.rankDisplay=num;
   }
 }
