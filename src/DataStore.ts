@@ -226,13 +226,16 @@ export class DataStore {
     if(!this.status.has("source"))return {line:0,file:""}
     if(!this.status.get("source").has(app))return {line:0,file:""}
     let source:Map<string,any> = this.status.get("source").get(app)
+    
     if(!displayRank) displayRank=0
-      for(const key in source.keys()){
-        if (this.filterRange(key,displayRank.toString())){
-          return source.get(key)
-        }
+    console.warn("display source:",source,displayRank)
+    for(const key in source.keys()){
+      console.warn("key:",key)
+      if (this.filterRange(key,displayRank.toString())){
+        return source.get(key)
       }
-      return {line:0,file:""}
+    }
+    return {line:0,file:""}
   }
 
   private rangeToString(range:[number,number][]):string{
@@ -246,7 +249,8 @@ export class DataStore {
     })
     return result.join(",");
   }
-  private parseRange(range:string):[number,number][]{
+
+  public parseRange(range:string):[number,number][]{
     let result:[number,number][]=[]
     range.replace(/\{|\}/g, "");
     const items = range.split(",")

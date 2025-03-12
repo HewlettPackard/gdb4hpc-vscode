@@ -276,17 +276,19 @@ export class GDB4HPC extends EventEmitter {
           this.dataStore.setStatus("appRunning",false);
           let reason = record.info?.get('reason');
           let procset = record.info?.get('proc_set');
+          let group = record.info?.get('group');
           switch (reason) {
             case 'breakpoint-hit':
             case 'end-stepping-range':
               console.warn("stopped:",record)
               this.dataStore.setStatus("source",{line:parseInt(record.info?.get('frame')["line"]),file:record.info?.get('frame')["fullname"]},
-                  record.info?.get('proc_set'),record.info?.get('group'));
+                  procset,group);
               console.warn("stored data")
               //open file and line if it's in the active debug session
               if(vscode.debug.activeDebugSession?.name==procset){
                 console.warn("is activeSession current")
                 let {line,file} = this.dataStore.getCurrentSource(procset);
+                console.warn("display",line,file)
                 if(file!="") displayFile(line,file);
                 console.warn("displayFile done")
               }
@@ -300,7 +302,7 @@ export class GDB4HPC extends EventEmitter {
             default:
               console.error('Unknown stop reason');
           }
-          this.emitEvent(reason,procset);
+          this.emitEvent(reason,procset,group);
         break;
 
       case 'running':
@@ -309,17 +311,24 @@ export class GDB4HPC extends EventEmitter {
     }
   }
 
-  private emitEvent(event: string, procset: string){
+  private emitEvent(event: string, procset: string, group:string){
     if(event=='exited-normally'){
       this.emit('exited-normally')
     }else if(event=='breakpoint-hit'|| event=='end-stepping-range'){
-      let threads = this.dataStore.getThreads(procset);
+      let threads = [...this.dataStore.getThreads(procset).values()];
+      console.warn("emitEvent threads:",[...threads])
       if (threads.length>0){
         threads.forEach ((thread, index)=>{
+          console.warn("emmiting for thread:",index)
             this.emit(event,index);
         });
       }else{
-        this.emit(event,0);
+        let parsedGroup=this.dataStore.parseRange(group);
+        parsedGroup.forEach(([start,end])=>{
+          for (let i:number = start; i<=end;i++){
+            this.emit(event,i);
+          }
+        })
       }
     }
   }
