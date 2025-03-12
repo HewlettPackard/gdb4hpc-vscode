@@ -1,12 +1,11 @@
 // Copyright 2024-2025 Hewlett Packard Enterprise Development LP.
 
 import {DebugProtocol} from '@vscode/debugprotocol';
-import { InitializedEvent, LoggingDebugSession, OutputEvent, Scope, Handles, 
-  StoppedEvent,InvalidatedEvent,TerminatedEvent,Thread, Variable} from '@vscode/debugadapter';
+import { InitializedEvent, LoggingDebugSession, OutputEvent, Handles, 
+  StoppedEvent,InvalidatedEvent,TerminatedEvent} from '@vscode/debugadapter';
 import { Subject } from 'await-notify';
 import { continue_cmd, next_cmd, pause_cmd, stepIn_cmd, stepOut_cmd, setBreakpoints, terminate_cmd,on_cmd,
-  getThreads, stack, getVariables, spawn, launchApp, sendCommand, evaluateVariable, getGroupFilter} from './extension';
-import { DbgVar } from './GDB4HPC';
+  getThreads, stack, getVariables, spawn, launchApp, sendCommand, evaluateVariable} from './extension';
 import * as vscode from 'vscode';
 
 export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
@@ -126,43 +125,18 @@ export class DebugSession extends LoggingDebugSession {
 
   protected scopesRequest(response: DebugProtocol.ScopesResponse,args: DebugProtocol.ScopesArguments): void {
     response.body = {
-      scopes: [new Scope("Locals", this._variableHandles.create('locals'), false)]
+      scopes: [{name:"Locals",variablesReference:this._variableHandles.create('locals'),expensive:false}]
     };
     this.sendResponse(response);
   }
 
   protected variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments) {
-    getVariables().then((vars: DbgVar[]) => {
-      let variables = this.convertVariables(vars)
+    getVariables(this.name).then((variables) => {
       response.body = {
         variables: variables,
       };
       this.sendResponse(response);
     });
-  }
-
-  //Converts variable to the debug adapter variable
-  private convertVariables(vars: DbgVar[]): Variable[]{
-    let filtered=[...vars];
-    filtered.filter((variable)=>variable.procset===this.name)
-    const variables: Variable[] = [];
-    if (filtered){
-      filtered.forEach(var1 => {
-        if (typeof var1.value === 'string' && var1.value) {
-          var1.value = var1.value.replace(/\\r/g, ' ').replace(/\\t/g, '\t').replace(/\\v/g, '\v').replace(/\\"/g, '"')
-                                    .replace(/\\'/g, "'").replace(/\\\\/g, '\\').replace(/\\n/g, ' ');
-        }
-
-        if(var1.value){
-          let name = var1.name+"{"+var1.group+"}"
-          const v: DebugProtocol.Variable = new Variable(name, var1.value, var1.childNum ? var1.referenceID : 0, var1.referenceID);
-          v.variablesReference = var1.referenceID;
-          v.type = var1.type;
-          variables.push(v);
-        }
-      });
-    }
-    return variables;
   }
 
   protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
@@ -196,18 +170,10 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
-    getThreads().then((threads:Map<string,any[]>) => {
-      //only return threads for the application
-      let sessionThreads = threads.get(this.name)
-      if(sessionThreads){
-        let resultThreads:Thread[] = []
-        sessionThreads.forEach((thread)=>{
-          resultThreads.push(new Thread(thread.id, thread.name));
-        });
-        response.body = {
-          threads:  resultThreads,
-        };
-      }
+    getThreads(this.name).then((threads:DebugProtocol.Thread[]) => {
+      response.body = {
+        threads:  threads,
+      };
       this.sendResponse(response);
     });
   }
@@ -216,10 +182,8 @@ export class DebugSession extends LoggingDebugSession {
     switch (args.context) {
       case 'watch':
       case 'hover': {
-        evaluateVariable(args.expression).then((eval_vars)=>{
-          eval_vars?eval_vars = eval_vars.filter((item)=>item.procset==this.name):null;
-          let variable_array = eval_vars?this.convertVariables(eval_vars):[];
-          variable_array?.forEach(variable =>  {
+        evaluateVariable(this.name,args.expression).then((eval_vars)=>{
+          eval_vars?.forEach(variable =>  {
             response.body = {
               result: variable!.value?variable!.value:'',
               variablesReference: variable!.variablesReference,

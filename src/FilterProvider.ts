@@ -26,12 +26,12 @@ export class FilterProvider implements vscode.WebviewViewProvider {
 		};
 
 		this._view.webview.onDidReceiveMessage( message => {
-      switch (message.command) {
+			switch (message.command) {
 				case 'filterGroup':
 					message.procset?setGroupFilter(message.procset):null;
 					message.source_filter?setDisplayRank(message.source_filter):null;
 					break;
-      }
+			}
     })		
 
 		//reference to display of panel
