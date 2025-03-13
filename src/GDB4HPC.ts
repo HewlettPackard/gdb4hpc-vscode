@@ -73,7 +73,10 @@ export class GDB4HPC extends EventEmitter {
     }
     this.apps = args.apps;
     this.apps.forEach((app)=>{
-      this.dataStore.setStatus("source",{line:0,file:""},app.name,app.group)
+      let procsets=app.procset.split(/\{|\}/)[1]
+      let group = "0.."+procsets[1]
+      this.dataStore.setStatus("source", {line:0,file:""}, procsets[0], group)
+      this.dataStore.setStatus("appData", {program: app.program, args: app.args}, procsets[0], group)
     })
     this.setupCommands = args.setupCommands
     this.output_panel = vscode.window.createOutputChannel("Program Output")
@@ -93,11 +96,14 @@ export class GDB4HPC extends EventEmitter {
       console.warn("in launch app")
       this.sendCommand(`launch $`+ app.procset + ` ` + app.program + ` ` + app.args).then(()=>{
         console.warn("launched")
+        let appData = this.dataStore.getStatus("appData")
         let merged:any=[];
-        for(let i =0; i<this.launchCount;i++){
-          merged.push(this.apps[i].procset)
+        for(const key in appData.keys()){
+          let proc=key+"{"+appData.get(key).keys()[0]+"}"
+          console.warn("procset:",proc)
+          merged.push(proc)
         }
-        this.dataStore.setStatus("focused",{name:"all",procset:merged.toString()});
+        this.dataStore.setStatus("focused",{name:"all",procset:merged.join(",")});
         this.dataStore.setStatus("appRunning",true)
         let split =app.procset.split(/\{|\}/)
         this.dataStore.setStatus("groupFilter",split[1],split[0],split[1])
@@ -459,10 +465,11 @@ export class GDB4HPC extends EventEmitter {
   public stack(startFrame: number, endFrame: number, id:number, session:string): Promise<DebugProtocol.StackFrame[]> {
     return new Promise(resolve => {
       this.sendCommand(`-stack-list-frames`).then((record: Record) => {
+        let final:DebugProtocol.StackFrame[] = [];
         record.info?.get('msgs').forEach((message:any)=>{
           this.dataStore.setStack(startFrame,endFrame,message)
+          final=[...final,...this.dataStore.getStack(message.proc_set,id)]
         })
-        let final =this.dataStore.getStack(session,id)
         console.warn("stack returned",[...final])
         resolve(final);
       })
