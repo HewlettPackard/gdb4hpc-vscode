@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Hewlett Packard Enterprise Development LP.
 
 import {DebugProtocol} from '@vscode/debugprotocol';
-import { InitializedEvent, LoggingDebugSession, OutputEvent, Handles, 
+import { InitializedEvent, LoggingDebugSession, OutputEvent, Handles, Scope,
   StoppedEvent,InvalidatedEvent,TerminatedEvent} from '@vscode/debugadapter';
 import { Subject } from 'await-notify';
 import { continue_cmd, next_cmd, pause_cmd, stepIn_cmd, stepOut_cmd, setBreakpoints, terminate_cmd,on_cmd,
@@ -182,19 +182,16 @@ export class DebugSession extends LoggingDebugSession {
     switch (args.context) {
       case 'watch':
       case 'hover': {
-        evaluateVariable(this.name,args.expression).then((eval_vars)=>{
-          eval_vars?.forEach(variable =>  {
-            response.body = {
-              result: variable!.value?variable!.value:'',
-              variablesReference: variable!.variablesReference,
-            };
+        evaluateVariable(this.name,args.expression).then((variable)=>{
+          response.body = {
+            result: variable.value?variable!.value:'',
+            variablesReference: variable.variablesReference,
+          };
 
-            if (!variable!.value) {
-              response.success = false;
-              response.message = `Variable not found`;
-            }
-          });
-          //FIX (PE-53410): only sending first rank available back for now as only one reply is able to be sent
+          if (!variable.value) {
+            response.success = false;
+            response.message = `Variable not found`;
+          }
           this.sendResponse(response);
         });
         break;

@@ -7,6 +7,7 @@ export class DataStore {
   private threads = new Map<string,any>();
   private stacks = new Map<string,any>();
   private status=new Map<string,any>();
+  private threadCount:Map<string,number> = new Map<string,number>();
 
   public setStatus(name:string,val:any,app?:string,group?:string){
     if(app){
@@ -18,7 +19,8 @@ export class DataStore {
           this.status.get(name).set(app,new Map<string,any>())
         }
         let values = this.status.get(name).get(app)
-        this.updateValue(values,group,val)
+        this.updateMap(values,group)
+        values.set(group,val)
       }
     }else{
       switch(name){
@@ -90,13 +92,14 @@ export class DataStore {
     let stack = message.stack
     for (let i = startFrame; i < Math.min(endFrame, stack.length); i++) {
       let frame = stack[i].frame;
-      stackResults.push({id:i,name:frame.func,source:{name:frame.file,path:frame.fullname},
+      stackResults.push({id:i,name:frame.func,source:{name:frame.file,path:frame.fullname,sourceReference:1},
                 line:parseInt(frame.line),column:0, instructionPointerReference:frame.addr});
     }
 
     if(!this.stacks.has(message.proc_set)) this.stacks.set(message.proc_set,new Map<string,any>());
     let values=this.stacks.get(message.proc_set)
-    this.updateValue(values,message.group,stackResults.slice())
+    this.updateMap(values,message.group)
+    values.set(message.group,stackResults.slice())
     console.warn("stack is set:",[...this.stacks.get(message.proc_set)])
   }
 
@@ -122,38 +125,45 @@ export class DataStore {
   }
 
   //set threadlist
-  public setThreads(app:string,message:any):DebugProtocol.Thread[]{
+  public setThreads(messages:any){
     console.warn("setting threads")
-    let threads:DebugProtocol.Thread[] = [];
+    messages.forEach((message)=>{
+      if(!this.threads.has(message.proc_set)){
+        this.threads.set(message.proc_set,new Map<string,any>());
+        this.threadCount.set(message.proc_set,0)
+      }
+      let group = message.group.toString().replace(/\{|\}/g, "");
+      let threadId:number= this.threadCount.get(message.proc_set)!
+      let threads:DebugProtocol.Thread[] = [];
 
-    if(!this.threads.has(message.proc_set)) this.threads.set(message.proc_set,new Map<string,any>());
-    
-    message.threads.forEach(thread=>{
-      let new_thread = {id: this.threads.get(message.proc_set).size, 
-        thread_id: parseInt(thread.id), name: message.proc_set+message.group+": "+parseInt(thread.id)};
-      threads.push(new_thread)
+      let values=this.threads.get(message.proc_set)
+      this.updateMap(values,group)
+      message.threads.forEach((thread)=>{
+        let name= message.proc_set+"{"+group+"}: "+parseInt(thread.id)
+        if(values.has(group)){
+          let old_thrd=values.get(group).find((old_thread)=>old_thread.name==name)
+          if(old_thrd){
+            threads.push(old_thrd)
+            return;
+          }
+        }
+        threads.push({id: threadId, name: name})
+        this.threadCount.set(message.proc_set,threadId+1)
+      })
+      if(threads) values.set(group,threads)
+      console.warn("returning threads after setting:",[...threads])
     })
-
-    if(!this.threads.has(message.proc_set)) this.threads.set(message.proc_set,new Map<string,any>());
-    let values=this.threads.get(message.proc_set)
-    this.updateValue(values,message.group,threads)
-
-    console.warn("returning threads after setting:",threads)
-    //only return if in app
-    if (message.proc_set!=app) threads=[]
-    return threads
   }
 
   public getThreads(app:string):DebugProtocol.Thread[]{
-    let a =this.threads.get(app)
-    let results:DebugProtocol.Thread[] = [];
-    if (!a)return[]
+    let threads = this.threads.get(app)
+    if (!threads)return[]
 
-    a.forEach((value,key)=>{//for each variable rank,value pair
+    let results:DebugProtocol.Thread[] = [];
+    threads.forEach((value,key)=>{//for each variable rank,value pair
       let new_group=this.filterRange(key,this.status.get("groupFilter"))
-      if(new_group){
-        const updatedValue = { ...value };
-        results.push(updatedValue);
+      if(!new_group||(new_group&&new_group!="")){
+        results.push(... value);
       }
     })
     return results;
@@ -177,9 +187,16 @@ export class DataStore {
       }
       let values = this.variables.get(variable.proc_set).get(name)
       let v=this.createVar(variable.name,variable.evaluateName,variable.type,variable.variableReference,variable.value)
-      this.updateValue(values,variable.group,v)
+      this.updateMap(values,variable.group)
+      values.set(variable.group,{...v})
+      let a = this.variables.get(variable.proc_set)
+      a.forEach((value, key)=>{
+        let b = a.get(key)
+        b.forEach((valueb,keyb)=>{
+          console.warn("updated vars",key,keyb,valueb)
+        })
+      })
     });
-    console.warn("updated vars",[...this.variables])
     return this.variables
   }
 
@@ -197,16 +214,36 @@ export class DataStore {
     if(appVars){
       appVars.forEach((variable)=>{ //for each variable
         variable.forEach((value,key)=>{//for each variable rank,value pair
-          let new_group=this.filterRange(key,this.status.get("groupFilter"))
-          if(new_group){
-            const updatedValue = { ...value, name: value.name+"{"+new_group+"}" };
+          //let new_group=this.filterRange(key,this.status.get("groupFilter"))
+          //if(new_group){
+            const updatedValue = { ...value, name: value.name+"{"+key+"}" };
             variables.push(updatedValue);
-          }
+          //}
         })
       })
     }
     console.warn("returning local vars:",[...variables])
     return variables;
+  }
+
+  public getVariableValue(app:string,name:string):{value:string,variablesReference:number}{
+    console.warn("getting local vars")
+    let variables: string[] = [];
+    let found_variable = this.variables.get(app).get(name);
+    let varReference=0
+    if(found_variable){
+      found_variable.forEach((variable)=>{ //for each variable
+        variable.forEach((value,key)=>{//for each variable rank,value pair
+          varReference=value.variablesReference
+          let new_group=this.filterRange(key,this.status.get("groupFilter"))
+          if(new_group){
+            const updatedValue = value.name+"{"+new_group+"}:"+value.value ;
+            variables.push(updatedValue)
+          }
+        })
+      })
+    }
+    return {value:variables.join('\n'),variablesReference:varReference};
   }
 
   //create a variable
@@ -252,7 +289,7 @@ export class DataStore {
 
   public parseRange(range:string):[number,number][]{
     let result:[number,number][]=[]
-    range.replace(/\{|\}/g, "");
+    range=range.toString().replace(/\{|\}/g, "");
     const items = range.split(",")
     items.forEach((item)=>{
       if(item.includes('..')){
@@ -287,10 +324,11 @@ export class DataStore {
     return a;
   }
 
-  //filter range1 constrained by range21..4,6   2..5,7
-  private filterRange(range1:string,range2:string):string{
+  //filter range1 constrained by range2 1..4,6   2..5,7
+  private filterRange(range1:string,range2:string):string|undefined{
     console.warn("filterRange")
     let result: [number,number][]=[];
+    if (range1==""||range2=="") return;
     const range1Parsed=this.parseRange(range1)
     const range2Parsed=this.parseRange(range2)
     range1Parsed.forEach(([start1,end1])=>{
@@ -305,22 +343,24 @@ export class DataStore {
     return this.rangeToString(result);
   }
 
-  private updateValue(map:any,group:string, value:any){
-    console.warn("in updateValues:",[...map])
-    let results:{key:string,remaining:string,value:string}[]=[]
+  private updateMap(map:any,group:string){
+    console.warn("in updateMaps:",[...map])
+    group=group.toString().replace(/\{|\}/g, "");
+    let results:{remaining:string,value:string}[]=[]
     map.forEach((val:any,key:string)=>{
-      const remaining = this.removeRange(group,key)
-      if(remaining!=""){
-        if(remaining==group) return;
-        results.push({key:key,remaining:remaining,value:val})
+      if(group==key){
+        return;
       }
-      map.delete(key)
+      const remaining = this.removeRange(group,key)
+      if(remaining!=key){
+        results.push({remaining:remaining,value:val})
+        map.delete(key)
+      }
     })
-    results.forEach((key,remaining,value)=>{
+    //add new key/value for new remaining range
+    results.forEach(({remaining,value})=>{
       map.set(remaining,value)
-      map.delete(key)
     })
-    map.set(group,value)
-    console.warn("in updateValues updated:",[...map])
+    console.warn("in updateMaps updated:",[...map])
   }
 }

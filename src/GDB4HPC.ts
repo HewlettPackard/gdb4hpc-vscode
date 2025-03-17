@@ -367,26 +367,24 @@ export class GDB4HPC extends EventEmitter {
     return new Promise(resolve => {
       this.sendCommand('-thread-info').then((record: Record) => {
         let results:DebugProtocol.Thread[]=[]
-        record.info?.get('msgs').forEach((message:any)=>{
-          results.push(...this.dataStore.setThreads(app,message))
-        })
-        console.warn([...results])
+        this.dataStore.setThreads(record.info?.get('msgs'))
+        results = this.dataStore.getThreads(app)
         resolve(results);      
       });
     });
   }
 
-  public evaluateVariable(app:string, name: string): Promise<DebugProtocol.Variable[]> {
+  public evaluateVariable(app:string, name: string): Promise<{value:string,variablesReference:number}> {
     return new Promise(resolve => {
       if (!this.dataStore.varExists(app,name)){
         this.createVariable(name).then(() => {
-          let result = this.dataStore.getLocalVariables(app).filter(variable=>variable.evaluateName===name)
+          let result = this.dataStore.getVariableValue(app,name)
           resolve(result);
         });
       }
       this.updateVariables().then(() => {
         //let result = variables.filter((variable)=>variable.name === name)
-        let result = this.dataStore.getLocalVariables(app).filter(variable=>variable.evaluateName===name)
+        let result = this.dataStore.getVariableValue(app,name)
         resolve(result);
       });
     })
@@ -468,8 +466,8 @@ export class GDB4HPC extends EventEmitter {
         let final:DebugProtocol.StackFrame[] = [];
         record.info?.get('msgs').forEach((message:any)=>{
           this.dataStore.setStack(startFrame,endFrame,message)
-          final=[...final,...this.dataStore.getStack(message.proc_set,id)]
         })
+        final=this.dataStore.getStack(session,id)
         console.warn("stack returned",[...final])
         resolve(final);
       })

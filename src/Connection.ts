@@ -153,7 +153,7 @@ async function getFileFromRemote(file):Promise<string>{
 }
 
 export function writeToShell(data){
-  if(shellStream) shellStream.write(`${data}`);
+   shellStream.write(`${data}`);
 }
 
 //if ssh connection, get remote file path otherwise return original
