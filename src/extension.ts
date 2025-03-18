@@ -97,7 +97,6 @@ export function activate(context: vscode.ExtensionContext) {
 
   //once a debugSession is launched for an app, launch another until all are launched
   vscode.debug.onDidStartDebugSession(async session => {
-    console.warn("onStartDebugSession")
     if(!debugSessions.some((sess) => session.id == sess.id)){
       debugSessions.push(session);
     } 
@@ -129,8 +128,11 @@ export function activate(context: vscode.ExtensionContext) {
   vscode.debug.onDidChangeActiveDebugSession(async(session:vscode.DebugSession|undefined)=>{
     if (session){
       if(debugSessions.length==0) debugSessions.push(session)
-      //let {line,file} = gdb4hpc.getCurrentSource(session.name);
-      //if(file!="") displayFile(line,file);
+        gdb4hpc.getCurrentSource(session.name).then((source)=>{
+          if(source&&source.file!=""){
+            displayFile(source.line,source.file);
+          }
+        })
     }
   })
 }

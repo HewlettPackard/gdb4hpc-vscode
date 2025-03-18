@@ -93,14 +93,11 @@ export class GDB4HPC extends EventEmitter {
   public launchApp(num:number):  Promise<boolean> {
     let app = this.apps[num];
     return new Promise(resolve => {
-      console.warn("in launch app")
       this.sendCommand(`launch $`+ app.procset + ` ` + app.program + ` ` + app.args).then(()=>{
-        console.warn("launched")
         let appData = this.dataStore.getStatus("appData")
         let merged:any=[];
         for(const key in appData.keys()){
           let proc=key+"{"+appData.get(key).keys()[0]+"}"
-          console.warn("procset:",proc)
           merged.push(proc)
         }
         this.dataStore.setStatus("focused",{name:"all",procset:merged.join(",")});
@@ -185,7 +182,6 @@ export class GDB4HPC extends EventEmitter {
   private send(command: string): Promise<any> {
     return new Promise(resolve => {
       if (!this.dataStore.getStatus("started")){
-        console.warn("send command:",command)
         if (command.startsWith("gdb4hpc")){
           //start gdb4hpc with the interpreter set to mi
           writeToShell(`${command} --interpreter=mi\n`);
@@ -223,7 +219,6 @@ export class GDB4HPC extends EventEmitter {
 
     lines.forEach(line => {
       line = line.trim();
-      console.warn("line:",line)
 
       //if gdb4hpc is not started, show all output in Debug Console
       if (!this.dataStore.getStatus("started")){
@@ -286,19 +281,16 @@ export class GDB4HPC extends EventEmitter {
           switch (reason) {
             case 'breakpoint-hit':
             case 'end-stepping-range':
-              console.warn("stopped:",record)
-              this.dataStore.setStatus("source",{line:parseInt(record.info?.get('frame')["line"]),file:record.info?.get('frame')["fullname"]},
-                  procset,group);
-              console.warn("stored data")
+              this.dataStore.setStatus("source",{line:parseInt(record.info?.get('frame')["line"]),
+                file:record.info?.get('frame')["fullname"]},procset,group);
               //open file and line if it's in the active debug session
               if(vscode.debug.activeDebugSession?.name==procset){
-                console.warn("is activeSession current")
-                let {line,file} = this.dataStore.getCurrentSource(procset);
-                console.warn("display",line,file)
-                if(file!="") displayFile(line,file);
-                console.warn("displayFile done")
+                this.dataStore.getCurrentSource(procset).then((source)=>{
+                  if(source&&source.file!=""){
+                    displayFile(source.line,source.file);
+                  }
+                })
               }
-              console.warn("out of active session current")
               break;
 
             case 'exited-normally':
@@ -322,10 +314,8 @@ export class GDB4HPC extends EventEmitter {
       this.emit('exited-normally')
     }else if(event=='breakpoint-hit'|| event=='end-stepping-range'){
       let threads = [...this.dataStore.getThreads(procset).values()];
-      console.warn("emitEvent threads:",[...threads])
       if (threads.length>0){
         threads.forEach ((thread, index)=>{
-          console.warn("emmiting for thread:",index)
             this.emit(event,index);
         });
       }else{
@@ -468,7 +458,6 @@ export class GDB4HPC extends EventEmitter {
           this.dataStore.setStack(startFrame,endFrame,message)
         })
         final=this.dataStore.getStack(session,id)
-        console.warn("stack returned",[...final])
         resolve(final);
       })
     });
@@ -514,9 +503,9 @@ export class GDB4HPC extends EventEmitter {
         clearBkpts(file).then(() => {
           breakpoints.forEach(srcBkpt => pending.push(insertBkpt(file, srcBkpt.line)));
           Promise.all(pending).then(() => {
-            let a = this.dataStore.getStatus("breakpoints")
-            if(a){
-              const fileBkpts = a.filter(bkpt => {
+            let bkpts = this.dataStore.getStatus("breakpoints")
+            if(bkpts){
+              const fileBkpts = bkpts.filter(bkpt => {
                 return bkpt.source?.path == file;
               });
               resolve(fileBkpts);
@@ -648,7 +637,7 @@ export class GDB4HPC extends EventEmitter {
     });
   }
   
-  public getCurrentSource(app:string):{line:number,file:string}{
+  public getCurrentSource(app:string):Promise<{line:number,file:string}>{
     return this.dataStore.getCurrentSource(app)
   }
 

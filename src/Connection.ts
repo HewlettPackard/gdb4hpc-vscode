@@ -153,7 +153,7 @@ async function getFileFromRemote(file):Promise<string>{
 }
 
 export function writeToShell(data){
-   shellStream.write(`${data}`);
+  shellStream.write(`${data}`);
 }
 
 //if ssh connection, get remote file path otherwise return original
@@ -162,5 +162,10 @@ export function getRemoteFile(file:string):string{
     let a = (Object.keys(file_map) as string[]).find(key => file_map[key]===file)
     if(a) return a;
   }
+  return file
+}
+
+export function getLocalFile(file:string):string{
+  if(remote) return file_map[file]
   return file
 }

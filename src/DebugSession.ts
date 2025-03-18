@@ -1,8 +1,8 @@
 // Copyright 2024-2025 Hewlett Packard Enterprise Development LP.
 
 import {DebugProtocol} from '@vscode/debugprotocol';
-import { InitializedEvent, LoggingDebugSession, OutputEvent, Handles, Scope,
-  StoppedEvent,InvalidatedEvent,TerminatedEvent} from '@vscode/debugadapter';
+import { InitializedEvent, LoggingDebugSession, OutputEvent, Handles, StoppedEvent,InvalidatedEvent,
+  TerminatedEvent} from '@vscode/debugadapter';
 import { Subject } from 'await-notify';
 import { continue_cmd, next_cmd, pause_cmd, stepIn_cmd, stepOut_cmd, setBreakpoints, terminate_cmd,on_cmd,
   getThreads, stack, getVariables, spawn, launchApp, sendCommand, evaluateVariable} from './extension';

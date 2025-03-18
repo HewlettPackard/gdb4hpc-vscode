@@ -1,6 +1,7 @@
 // Copyright 2025 Hewlett Packard Enterprise Development LP.
 
 import { DebugProtocol } from '@vscode/debugprotocol';
+import { getLocalFile} from './Connection';
 
 export class DataStore {
   private variables = new Map<string,any>();
@@ -25,7 +26,6 @@ export class DataStore {
     }else{
       switch(name){
       case "breakpoints":
-        console.warn("breakpoints")
         if(!this.status.get(name)){
           let breakpoints:DebugProtocol.Breakpoint[]=[];
           this.status.set(name,breakpoints)
@@ -40,38 +40,31 @@ export class DataStore {
   }
 
   public getStatus(name:string,app?:string):any{
-    let results:any[] = []
     if(app){
+      let results:any[] = []
       if(!this.status.get(name).get(app)) return
-      if(this.status.get(name).get(app).ranges){
-        this.status.get(name).get(app).forEach(item=>{//for each variable rank,value pair
-          let new_group=this.filterRange(item.ranges,this.status.get("groupFilter"))
-          if(new_group){
-            results.push(item.value)
-          }
-        })
-        return results
-      }else{
-        return this.status.get(name).get(app);
-      }
+      this.status.get(name).get(app).forEach((value,key)=>{
+        let new_group=this.filterRange(key,this.status.get("groupFilter"))
+        if(new_group){
+          results.push(value)
+        }
+      })
+      return results
     }
     return this.status.get(name)
   }
 
   public removeFileBreakpoints(file:string):DebugProtocol.Breakpoint[]{
-    console.warn("removeFileBreakpoints")
     if(!this.status.get("breakpoints")) return [];
     let removeBkpts=this.status.get("breakpoints")
     removeBkpts=removeBkpts.filter(bkpt => {
       return bkpt.source?.path == file;
     });
-    console.warn("removeBkpts:",[...removeBkpts])
     let filtered = this.status.get("breakpoints")
     filtered=filtered.filter(bkpt => {
       return bkpt.source?.path != file;
     });
     this.status.set("breakpoints",filtered);
-    console.warn("filteredBkpts:",[...filtered])
     return removeBkpts;
   }
 
@@ -80,19 +73,18 @@ export class DataStore {
     if(!val){
       this.status.set("breakpoints",new Array<DebugProtocol.Breakpoint>())
     }
-    val=this.status.get("breakpoints")
+    val=this.status.get("breakpoisnts")
     val.push(bkpt)
-    console.warn("added bkpt:",[...val])
   }
 
-  //set stack
+  //set stack with new stack results
   public setStack(startFrame:number,endFrame:number,message:any){
-    console.warn("set stack:")
     let stackResults: DebugProtocol.StackFrame[] = [];
     let stack = message.stack
     for (let i = startFrame; i < Math.min(endFrame, stack.length); i++) {
       let frame = stack[i].frame;
-      stackResults.push({id:i,name:frame.func,source:{name:frame.file,path:frame.fullname,sourceReference:1},
+      let file = getLocalFile(frame.fullname)
+      stackResults.push({id:i,name:frame.func,source:{name:frame.file,path:file,sourceReference:1},
                 line:parseInt(frame.line),column:0, instructionPointerReference:frame.addr});
     }
 
@@ -100,33 +92,21 @@ export class DataStore {
     let values=this.stacks.get(message.proc_set)
     this.updateMap(values,message.group)
     values.set(message.group,stackResults.slice())
-    console.warn("stack is set:",[...this.stacks.get(message.proc_set)])
   }
 
   public getStack(app:string,id:number):DebugProtocol.StackFrame[]{
-    console.warn("getting stack:")
-    //let threads:any[]=this.threads.has(app)?Array.from(this.threads.get(app)):[]
-    //let request_group = threads?threads.find((item)=>item[1].id===id):[]
-    //console.warn("request_group",request_group)
     let stacks = this.stacks.get(app)
     if(!stacks) return []
     let stackResults: DebugProtocol.StackFrame[] = [];
     stacks.forEach((value,key)=>{
-      //let group_filter=this.filterRange(key,this.status.get("groupFilter"))
-      //let thread_filter = this.filterRange(key,request_group)
-      //let new_group = this.filterRange(group_filter,thread_filter)
-      //if(thread_filter){
-        const updatedValue = { ...value };
-        stackResults.push(updatedValue);
-      //}
+      const updatedValue = { ...value };
+      stackResults.push(updatedValue);
     })
-    console.warn("returning stack:",[...stackResults])
     return stackResults
   }
 
-  //set threadlist
+  //update threads 
   public setThreads(messages:any){
-    console.warn("setting threads")
     messages.forEach((message)=>{
       if(!this.threads.has(message.proc_set)){
         this.threads.set(message.proc_set,new Map<string,any>());
@@ -151,10 +131,10 @@ export class DataStore {
         this.threadCount.set(message.proc_set,threadId+1)
       })
       if(threads) values.set(group,threads)
-      console.warn("returning threads after setting:",[...threads])
     })
   }
 
+  //retrieve threads for application
   public getThreads(app:string):DebugProtocol.Thread[]{
     let threads = this.threads.get(app)
     if (!threads)return[]
@@ -171,7 +151,6 @@ export class DataStore {
 
   //update Variable list
   public updateVars(variables:any):any{
-    console.warn("updating vars")
     variables.forEach(variable_old=>{
       let variable ={...variable_old}
       if(!this.variables.get(variable.proc_set)){
@@ -188,52 +167,39 @@ export class DataStore {
       let values = this.variables.get(variable.proc_set).get(name)
       let v=this.createVar(variable.name,variable.evaluateName,variable.type,variable.variableReference,variable.value)
       this.updateMap(values,variable.group)
-      values.set(variable.group,{...v})
-      let a = this.variables.get(variable.proc_set)
-      a.forEach((value, key)=>{
-        let b = a.get(key)
-        b.forEach((valueb,keyb)=>{
-          console.warn("updated vars",key,keyb,valueb)
-        })
-      })
+      values.set(variable.group,{...v})      
     });
     return this.variables
   }
 
   //check if variable exists already
   public varExists(app:string,name:string){
-    console.warn("var exists:",name,[...this.variables])
     return this.variables.get(app).has(name);
   }
 
   //get local variables for display
   public getLocalVariables(app:string):DebugProtocol.Variable[]{
-    console.warn("getting local vars")
     const variables: DebugProtocol.Variable[] = [];
     let appVars = this.variables.get(app);
     if(appVars){
-      appVars.forEach((variable)=>{ //for each variable
-        variable.forEach((value,key)=>{//for each variable rank,value pair
-          //let new_group=this.filterRange(key,this.status.get("groupFilter"))
-          //if(new_group){
-            const updatedValue = { ...value, name: value.name+"{"+key+"}" };
-            variables.push(updatedValue);
-          //}
+      appVars.forEach((variable)=>{
+        variable.forEach((value,key)=>{
+          const updatedValue = { ...value, name: value.name+"{"+key+"}" };
+          variables.push(updatedValue);
         })
       })
     }
-    console.warn("returning local vars:",[...variables])
     return variables;
   }
 
+  //get a value for a variable for evaluateRequest
   public getVariableValue(app:string,name:string):{value:string,variablesReference:number}{
-    console.warn("getting local vars")
     let variables: string[] = [];
     let found_variable = this.variables.get(app).get(name);
     let varReference=0
     if(found_variable){
-      found_variable.forEach((variable)=>{ //for each variable
-        variable.forEach((value,key)=>{//for each variable rank,value pair
+      found_variable.forEach((variable)=>{
+        variable.forEach((value,key)=>{
           varReference=value.variablesReference
           let new_group=this.filterRange(key,this.status.get("groupFilter"))
           if(new_group){
@@ -248,33 +214,34 @@ export class DataStore {
 
   //create a variable
   private createVar(name:string, evaluateName:string, type:string, variableReference:number,value:any):DebugProtocol.Variable{
-    console.warn("creating var")
     if (typeof value === 'string' && value) {
       value = value.replace(/\\r/g, ' ').replace(/\\t/g, '\t').replace(/\\v/g, '\v').replace(/\\"/g, '"')
                                 .replace(/\\'/g, "'").replace(/\\\\/g, '\\').replace(/\\n/g, ' ');
     }
     const v: DebugProtocol.Variable = {name:name,type:type,evaluateName:evaluateName,variablesReference:variableReference,value:value};
-    console.warn("created var:",v)
     return v;
   }
 
-  public getCurrentSource(app:string):{line:number,file:string}{
+  //helps return current Source line and file
+  public getCurrentSource(app:string):Promise<{line:number,file:string}>{
     let displayRank:number = this.status.has("displayRank")?this.status.get("displayRank").get(app):0
-    if(!this.status.has("source"))return {line:0,file:""}
-    if(!this.status.get("source").has(app))return {line:0,file:""}
-    let source:Map<string,any> = this.status.get("source").get(app)
-    
-    if(!displayRank) displayRank=0
-    console.warn("display source:",source,displayRank)
-    for(const key in source.keys()){
-      console.warn("key:",key)
-      if (this.filterRange(key,displayRank.toString())){
-        return source.get(key)
-      }
-    }
-    return {line:0,file:""}
+    return new Promise(resolve => {
+      if(!this.status.has("source")) resolve({line:0,file:""})
+      if(!this.status.get("source").has(app)) resolve({line:0,file:""})
+      let source:Map<string,any> = this.status.get("source").get(app)
+      
+      if(!displayRank) displayRank=0
+      source.forEach((value,key)=>{
+        let new_group=this.filterRange(key,this.status.get("groupFilter"))
+        if(!new_group||(new_group&&new_group!="")){
+          resolve(value)
+        }
+      })
+      resolve({line:0,file:""})
+    })
   }
 
+  //converts a range value to string
   private rangeToString(range:[number,number][]):string{
     let result:string[]=[]
     range.forEach(([start,end])=>{
@@ -302,9 +269,13 @@ export class DataStore {
     return result;
   }
 
-  //from original range, get the left over after removing a specific range
+  //if values for different ranks are updating, 
+  // remove the ranks that are being updated
+  //and keep the value for the old ranks that didn't change
+  //i.e. if ranks 1..4 = "a" and then rank 2 gets updated to "b"
+  //rank 2 gets removed from 1..4 to create
+  // ranks 1,3..4="a" and rank 2="b"
   private removeRange(removeRanges:string,baseRanges:string){
-    console.warn("removing range",removeRanges,baseRanges)
     let resultParts:[number,number][]=[]
     const removeRangeParts = this.parseRange(removeRanges)
     const baseRangeParts = this.parseRange(baseRanges)
@@ -318,15 +289,12 @@ export class DataStore {
         if(remEnd<baseEnd) resultParts.push([Math.max(baseStart,remEnd+1),baseEnd]);
       })
     })
-
-    let a = this.rangeToString(resultParts)
-    console.warn("removing range done",a)
-    return a;
+    return this.rangeToString(resultParts);
   }
 
-  //filter range1 constrained by range2 1..4,6   2..5,7
+  //returns if two ranges have overlap ie (1..4,6)   (2..5,7)  = (2..4)
+  //mostly used for filtering in vscode by ranks
   private filterRange(range1:string,range2:string):string|undefined{
-    console.warn("filterRange")
     let result: [number,number][]=[];
     if (range1==""||range2=="") return;
     const range1Parsed=this.parseRange(range1)
@@ -343,8 +311,8 @@ export class DataStore {
     return this.rangeToString(result);
   }
 
+  //update map in preperation for adding new values
   private updateMap(map:any,group:string){
-    console.warn("in updateMaps:",[...map])
     group=group.toString().replace(/\{|\}/g, "");
     let results:{remaining:string,value:string}[]=[]
     map.forEach((val:any,key:string)=>{
@@ -361,6 +329,5 @@ export class DataStore {
     results.forEach(({remaining,value})=>{
       map.set(remaining,value)
     })
-    console.warn("in updateMaps updated:",[...map])
   }
 }
