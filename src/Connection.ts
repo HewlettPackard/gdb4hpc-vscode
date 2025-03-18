@@ -1,7 +1,6 @@
 // Copyright 2024-2025 Hewlett Packard Enterprise Development LP.
 
 import * as ssh from 'ssh2'
-import * as pty from 'node-pty'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -15,53 +14,52 @@ let ssh_config:any;
 const file_map = {};
 let tmpDir:string ="";
 
-export function startConnection(conn_type, configuration, dataCallback, closeCallback){
-  remote = conn_type
+export function startConnection(configuration, dataCallback, closeCallback):Promise<void>{
+  //always remote on windows otherwise check the connection type.
+  remote = process.platform==='win32'?true:(configuration.host?true:false)
   ssh_config=configuration
-  switch (remote){
-    case true:
+  return new Promise((resolve,reject)=>{
+    if (remote){
       let conn = new ssh.Client();
-      return new Promise((resolve,reject)=>{
-        conn.on('ready',()=>{
-          conn.shell((err,stream)=>{
-            if(err){
-              reject(err)
-              return;
+      conn.on('ready',()=>{
+        conn.shell((err,stream)=>{
+          if(err){
+            reject(err)
+            return;
+          }
+          shellStream = stream;
+          stream.on('data',(data)=>{
+            let ret = dataCallback(data);
+            if(ret){
+              resolve()
             }
-            shellStream = stream;
-            stream.on('data',(data)=>{
-              let ret = dataCallback(data);
-              if(ret){
-                resolve(true)
-              }
-            })
-            stream.on('close',()=>{
-              closeCallback();
-              removeFiles();
-              conn.end();
-            })
           })
-          conn.sftp(async (err,sftp)=>{
-            sftp_conn=sftp;
+          stream.on('close',()=>{
+            closeCallback();
+            removeFiles();
+            conn.end();
           })
-        }).connect(ssh_config)
-      })
-
-    case false:
-      shellStream = pty.spawn('bash', [], ssh_config);
-      return new Promise((resolve)=>{
+        })
+        conn.sftp(async (err,sftp)=>{
+          sftp_conn=sftp;
+        })
+      }).connect(ssh_config)
+    }else{
+      try{
+        const {spawn} = require('node-pty')
+        shellStream = spawn('bash', [], ssh_config);
         shellStream.onData((data)=>{
           let ret = dataCallback(data);
-          if(ret){
-            resolve(true)
-          }
+          if(ret) resolve()
         })
-    
         shellStream.onExit((e) => { 
           closeCallback();
         });
-      })
-  }
+      }catch(err){
+        reject(err)
+      }
+    }
+  })
 }
 
 function removeFiles(){
@@ -153,7 +151,8 @@ async function getFileFromRemote(file):Promise<string>{
 }
 
 export function writeToShell(data){
-  shellStream.write(`${data}`);
+  if(shellStream) shellStream.write(`${data}`);
+
 }
 
 //if ssh connection, get remote file path otherwise return original
