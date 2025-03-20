@@ -300,7 +300,7 @@ export class DataStore {
     }
 
     while(base<baseRangeParts.length){
-      //remove range is less than the base,check next remove range
+      //check if incremented, get new range
       if(incremented=="rem"){
         rem<removeRangeParts.length?[remStart,remEnd]=removeRangeParts[rem]:[remStart,remEnd]=[-1,-1];
       }else if(incremented=="base"){
@@ -315,7 +315,7 @@ export class DataStore {
           inc("base")
           continue;
 
-        //base start was incremented past its end and now invalid, move on to next base range
+        //base start was incremented past its end and now invalid, check next base range
         case(baseStart>baseEnd):
           inc("base")
           continue;
@@ -332,7 +332,7 @@ export class DataStore {
           continue;
   
         //remove range starts before or in the base range, 
-        // if range starts after base start, push the beginning to results
+        // if range starts after base start, push to results range before remove start
         // move base start to after remove range
         case(remStart<=baseEnd):
           (remStart>baseStart)?resultParts.push([baseStart,remStart-1]):null;
