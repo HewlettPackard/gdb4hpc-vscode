@@ -7,51 +7,46 @@ export class DataStore {
   private variables = new Map<string,any>();
   private threads = new Map<string,any>();
   private stacks = new Map<string,any>();
-  private status=new Map<string,any>();
+  private status = new Map<string,any>();
   private threadCount:Map<string,number> = new Map<string,number>();
 
   public setStatus(name:string,val:any,app?:string,group?:string){
-    if(app){
-      if(!this.status.get(name)){
-        this.status.set(name,new Map<string,any>());
-      }
-      if(group){
-        if(!this.status.get(name).get(app)){
-          this.status.get(name).set(app,new Map<string,any>())
-        }
-        let values = this.status.get(name).get(app)
-        this.updateMap(values,group)
-        values.set(group,val)
-      }
-    }else{
-      switch(name){
-      case "breakpoints":
-        if(!this.status.get(name)){
-          let breakpoints:DebugProtocol.Breakpoint[]=[];
-          this.status.set(name,breakpoints)
-        }
-        this.status.get(name).push(val)
-        break;
-      default:
-        this.status.set(name,val)
-        break;
-      }
+    if(!app){
+      this.status.set(name,val)
+      return;
     }
+
+    let status:any = this.status.get(name)
+    if(!status){
+      status=new Map<string,any>()
+      this.status.set(name,status);
+    }
+    let values = status.get(app);
+    if (!group){
+      status.set(app,val)
+      return;
+    }
+    if (!values){
+      values = new Map<string,any>();
+      status.set(app,values)
+    }
+    this.updateMap(values,group)
+    values.set(group,val)
   }
 
   public getStatus(name:string,app?:string):any{
-    if(app){
-      let results:any[] = []
-      if(!this.status.get(name).get(app)) return
-      this.status.get(name).get(app).forEach((value,key)=>{
-        let new_group=this.filterRange(key,this.status.get("groupFilter"))
-        if(new_group){
-          results.push(value)
-        }
-      })
-      return results
-    }
-    return this.status.get(name)
+    if (!app) return this.status.get(name)
+    let results:any[] = []
+    let appStatus = this.status.get(name).get(app)
+    if(!appStatus) return
+    if (!(appStatus instanceof Map)) return appStatus
+    appStatus.forEach((value,key)=>{
+      let new_group=this.filterRange(key,this.status.get("groupFilter").get(app))
+      if(new_group){
+        results.push(value)
+      }
+    })
+    return results
   }
 
   public removeFileBreakpoints(file:string):DebugProtocol.Breakpoint[]{
@@ -70,11 +65,9 @@ export class DataStore {
 
   public addBreakpoint(bkpt:DebugProtocol.Breakpoint){
     let val = this.status.get("breakpoints")
-    if(!val){
-      this.status.set("breakpoints",new Array<DebugProtocol.Breakpoint>())
-    }
-    val=this.status.get("breakpoisnts")
+    if(!val) val =new Array<DebugProtocol.Breakpoint>()
     val.push(bkpt)
+    this.status.set("breakpoints",val)
   }
 
   //set stack with new stack results
@@ -87,9 +80,11 @@ export class DataStore {
       stackResults.push({id:i,name:frame.func,source:{name:frame.file,path:file,sourceReference:1},
                 line:parseInt(frame.line),column:0, instructionPointerReference:frame.addr});
     }
-
-    if(!this.stacks.has(message.proc_set)) this.stacks.set(message.proc_set,new Map<string,any>());
     let values=this.stacks.get(message.proc_set)
+    if(!values){
+      values = new Map<string,any>()
+      this.stacks.set(message.proc_set,values);
+    }
     this.updateMap(values,message.group)
     values.set(message.group,stackResults.slice())
   }
@@ -98,9 +93,20 @@ export class DataStore {
     let stacks = this.stacks.get(app)
     if(!stacks) return []
     let stackResults: DebugProtocol.StackFrame[] = [];
+    let threads = this.threads.get(app)
+    function getThreadByValue(map, searchValue) {
+      for (let [key, value] of map.entries()) {
+        if (value.id === searchValue)
+          return key;
+      }
+    }
+    const thread_group = getThreadByValue(threads, id);
+    console.log(thread_group);
     stacks.forEach((value,key)=>{
-      const updatedValue = { ...value };
-      stackResults.push(updatedValue);
+      if(this.filterRange(thread_group,key)!=""){
+        const updatedValue = { ...value };
+        stackResults.push(updatedValue);
+      }
     })
     return stackResults
   }
@@ -108,20 +114,21 @@ export class DataStore {
   //update threads 
   public setThreads(messages:any){
     messages.forEach((message)=>{
-      if(!this.threads.has(message.proc_set)){
-        this.threads.set(message.proc_set,new Map<string,any>());
+      let appThreads = this.threads.get(message.proc_set)
+      if(!appThreads){
+        appThreads=new Map<string,any>()
+        this.threads.set(message.proc_set,appThreads);
         this.threadCount.set(message.proc_set,0)
       }
       let group = message.group.toString().replace(/\{|\}/g, "");
       let threadId:number= this.threadCount.get(message.proc_set)!
       let threads:DebugProtocol.Thread[] = [];
 
-      let values=this.threads.get(message.proc_set)
-      this.updateMap(values,group)
+      this.updateMap(appThreads,group)
       message.threads.forEach((thread)=>{
         let name= message.proc_set+"{"+group+"}: "+parseInt(thread.id)
-        if(values.has(group)){
-          let old_thrd=values.get(group).find((old_thread)=>old_thread.name==name)
+        if(appThreads.has(group)){
+          let old_thrd=appThreads.get(group).find((old_thread)=>old_thread.name==name)
           if(old_thrd){
             threads.push(old_thrd)
             return;
@@ -130,7 +137,7 @@ export class DataStore {
         threads.push({id: threadId, name: name})
         this.threadCount.set(message.proc_set,threadId+1)
       })
-      if(threads) values.set(group,threads)
+      if(threads) appThreads.set(group,threads)
     })
   }
 
@@ -141,7 +148,8 @@ export class DataStore {
 
     let results:DebugProtocol.Thread[] = [];
     threads.forEach((value,key)=>{//for each variable rank,value pair
-      let new_group=this.filterRange(key,this.status.get("groupFilter"))
+    
+      let new_group=this.filterRange(key,this.status.get("groupFilter").get(app))
       if(!new_group||(new_group&&new_group!="")){
         results.push(... value);
       }
@@ -153,18 +161,20 @@ export class DataStore {
   public updateVars(variables:any):any{
     variables.forEach(variable_old=>{
       let variable ={...variable_old}
-      if(!this.variables.get(variable.proc_set)){
-        this.variables.set(variable.proc_set,new Map<string,any>());
+      let appVariables = this.variables.get(variable.proc_set)
+      if(!appVariables){
+        appVariables=new Map<string,any>()
+        this.variables.set(variable.proc_set,appVariables);
       }
       let name = variable.hasOwnProperty("evaluateName")?variable.evaluateName:variable.name;
       if(!variable.hasOwnProperty("name")) variable["name"]=variable.evaluateName;
       if(!variable.hasOwnProperty("evaluateName")) variable["evaluateName"]=variable.name;
       if(!variable.hasOwnProperty("variableReference")) variable["variableReference"]=0;
 
-      if(!this.variables.get(variable.proc_set).has(name)){
-        this.variables.get(variable.proc_set).set(name,new Map<string,any>())
+      if(!appVariables.has(name)){
+        appVariables.set(name,new Map<string,any>())
       }
-      let values = this.variables.get(variable.proc_set).get(name)
+      let values = appVariables.get(name)
       let v=this.createVar(variable.name,variable.evaluateName,variable.type,variable.variableReference,variable.value)
       this.updateMap(values,variable.group)
       values.set(variable.group,{...v})      
@@ -201,9 +211,9 @@ export class DataStore {
       found_variable.forEach((variable)=>{
         variable.forEach((value,key)=>{
           varReference=value.variablesReference
-          let new_group=this.filterRange(key,this.status.get("groupFilter"))
+          let new_group=this.filterRange(key,this.status.get("groupFilter").get(app))
           if(new_group){
-            const updatedValue = value.name+"{"+new_group+"}:"+value.value ;
+            const updatedValue = value.name+"{"+key+"}:"+value.value ;
             variables.push(updatedValue)
           }
         })
@@ -215,8 +225,7 @@ export class DataStore {
   //create a variable
   private createVar(name:string, evaluateName:string, type:string, variableReference:number,value:any):DebugProtocol.Variable{
     if (typeof value === 'string' && value) {
-      value = value.replace(/\\r/g, ' ').replace(/\\t/g, '\t').replace(/\\v/g, '\v').replace(/\\"/g, '"')
-                                .replace(/\\'/g, "'").replace(/\\\\/g, '\\').replace(/\\n/g, ' ');
+      value = value.replace(/\\r|\\n|\\v/g, ' ').replace(/\\t/g, '\t').replace(/\\"/g, '"').replace(/\\'/g, "'").replace(/\\\\/g, '\\');
     }
     const v: DebugProtocol.Variable = {name:name,type:type,evaluateName:evaluateName,variablesReference:variableReference,value:value};
     return v;
@@ -226,13 +235,12 @@ export class DataStore {
   public getCurrentSource(app:string):Promise<{line:number,file:string}>{
     let displayRank:number = this.status.has("displayRank")?this.status.get("displayRank").get(app):0
     return new Promise(resolve => {
-      if(!this.status.has("source")) resolve({line:0,file:""})
-      if(!this.status.get("source").has(app)) resolve({line:0,file:""})
-      let source:Map<string,any> = this.status.get("source").get(app)
-      
-      if(!displayRank) displayRank=0
-      source.forEach((value,key)=>{
-        let new_group=this.filterRange(key,this.status.get("groupFilter"))
+      let sourceStatus = this.status.get("source")
+      if(!sourceStatus) resolve({line:0,file:""})
+      let appSource:Map<string,any> = sourceStatus.get(app)
+      if(!appSource) resolve({line:0,file:""})
+      appSource.forEach((value,key)=>{
+        let new_group=this.filterRange(key,this.status.get("groupFilter").get(app))
         if(!new_group||(new_group&&new_group!="")){
           resolve(value)
         }
@@ -256,14 +264,15 @@ export class DataStore {
 
   public parseRange(range:string):[number,number][]{
     let result:[number,number][]=[]
-    range=range.toString().replace(/\{|\}/g, "");
+    range=range.replace(/\{|\}/g, "");
     const items = range.split(",")
     items.forEach((item)=>{
       if(item.includes('..')){
         const [start,end]=item.split('..').map(x=>parseInt(x))
         result.push([start,end])
       }else{
-        result.push([parseInt(item),parseInt(item)])
+        let itm = parseInt(item)
+        result.push([itm,itm])
       }
     })
     return result;
@@ -279,16 +288,57 @@ export class DataStore {
     let resultParts:[number,number][]=[]
     const removeRangeParts = this.parseRange(removeRanges)
     const baseRangeParts = this.parseRange(baseRanges)
-    baseRangeParts.forEach(([baseStart,baseEnd])=>{
-      removeRangeParts.forEach(([remStart,remEnd]) =>{
-        if(remEnd<baseStart||remStart>baseEnd){
-          resultParts.push([baseStart,baseEnd]);
-          return;
-        }
-        if(remStart>baseStart) resultParts.push([baseStart,Math.min(baseEnd,remStart-1)]);
-        if(remEnd<baseEnd) resultParts.push([Math.max(baseStart,remEnd+1),baseEnd]);
-      })
-    })
+    let rem=0;
+    let base=0;
+    while(rem<removeRangeParts.length&&base<baseRangeParts.length){
+      let [remStart,remEnd]=removeRangeParts[rem];
+      let [baseStart,baseEnd]=baseRangeParts[base];
+      //remove range is less than the base,check next remove range
+      if(remEnd<baseStart){
+        rem++
+        continue;
+      }
+      //remove range is more than the base,check next base range
+      if(remStart>baseEnd){
+        resultParts.push([baseStart,baseEnd]);
+        base++
+        continue;
+      }
+      //remove range contains the full base, check next base range
+      if(remStart<=baseStart&&remEnd>=baseEnd){
+        base++;
+        continue;
+      }
+
+      //base range contains the full remove range
+      if(remStart>baseStart&&remEnd<baseEnd){
+        resultParts.push([baseStart,Math.min(baseEnd,remStart-1)]);
+        resultParts.push([Math.max(baseStart,remEnd+1),baseEnd]);
+        rem++
+        continue;
+      }
+
+      //partial removal(could be both)
+      //remove start is more than base start, but less than baseEnd
+      if(remStart>baseStart){
+        resultParts.push([baseStart,Math.min(baseEnd,remStart-1)]);
+      }else{
+        rem++
+      }
+      
+      //remove end is less than base end but more than base start
+      if(remEnd<baseEnd){
+        resultParts.push([Math.max(baseStart,remEnd+1),baseEnd]);
+      }else{
+        base++
+      }
+      
+    }
+    //add remaining base ranges
+    while(base<baseRangeParts.length){
+      resultParts.push(baseRangeParts[base]);
+      base++;
+    }
     return this.rangeToString(resultParts);
   }
 
@@ -296,22 +346,25 @@ export class DataStore {
   //mostly used for filtering in vscode by ranks
   private filterRange(range1:string,range2:string):string|undefined{
     let result: [number,number][]=[];
-    if (range1==""||range2=="") return;
+    if (!range1||!range2||range1==""||range2=="") return;
     const range1Parsed=this.parseRange(range1)
     const range2Parsed=this.parseRange(range2)
-    range1Parsed.forEach(([start1,end1])=>{
-      range2Parsed.forEach(([start2,end2])=>{
-        const newStart = Math.max(start1,start2);
-        const newEnd = Math.min(end1,end2);
-        if(newStart<=newEnd){
-          result.push([newStart,newEnd])
-        }
-      })
-    })
+    let r1=0
+    let r2=0
+    while(r1<range1Parsed.length&&r2<range2Parsed.length){
+      let [start1,end1]=range1Parsed[r1]
+      let [start2,end2]=range2Parsed[r2]
+      const newStart = Math.max(start1,start2)
+      const newEnd = Math.min(end1,end2)
+      if(newStart<=newEnd){
+        result.push([newStart,newEnd])
+      }
+      end1<end2?r1++:r2++
+    }
     return this.rangeToString(result);
   }
 
-  //update map in preperation for adding new values
+  //update map in preparation for adding new values
   private updateMap(map:any,group:string){
     group=group.toString().replace(/\{|\}/g, "");
     let results:{remaining:string,value:string}[]=[]

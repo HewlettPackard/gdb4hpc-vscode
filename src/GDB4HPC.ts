@@ -73,8 +73,8 @@ export class GDB4HPC extends EventEmitter {
     }
     this.apps = args.apps;
     this.apps.forEach((app)=>{
-      let procsets=app.procset.split(/\{|\}/)[1]
-      let group = "0.."+procsets[1]
+      let procsets=app.procset.split(/\{|\}/)
+      let group = "0.."+(parseInt(procsets[1])-1)
       this.dataStore.setStatus("source", {line:0,file:""}, procsets[0], group)
       this.dataStore.setStatus("appData", {program: app.program, args: app.args}, procsets[0], group)
     })
@@ -94,16 +94,20 @@ export class GDB4HPC extends EventEmitter {
     let app = this.apps[num];
     return new Promise(resolve => {
       this.sendCommand(`launch $`+ app.procset + ` ` + app.program + ` ` + app.args).then(()=>{
-        let appData = this.dataStore.getStatus("appData")
+        let data = this.dataStore.getStatus("appData")
         let merged:any=[];
-        for(const key in appData.keys()){
-          let proc=key+"{"+appData.get(key).keys()[0]+"}"
-          merged.push(proc)
-        }
+        let split =app.procset.split(/\{|\}/)
+        let group = split[1]
+        data.forEach((value, key) => {
+          value.forEach((appValue,appKey)=>{
+            if(key===split[0]) group=appKey
+            let proc=key+"{"+appKey+"}"
+            merged.push(proc)
+          })
+        })
         this.dataStore.setStatus("focused",{name:"all",procset:merged.join(",")});
         this.dataStore.setStatus("appRunning",true)
-        let split =app.procset.split(/\{|\}/)
-        this.dataStore.setStatus("groupFilter",split[1],split[0],split[1])
+        this.dataStore.setStatus("groupFilter",group,split[0])
         this.dataStore.setStatus("rankDisplay",0)  
         this.launchCount ++;
         Promise.all(this.cmdPending).then(() => {
@@ -208,7 +212,6 @@ export class GDB4HPC extends EventEmitter {
 
   private handleOutput(data: any): void {
     let lines: string[] = []
-
     const getLines = (i: number)=>{
       if(i < 0) return;
       lines = this.data.slice(0, i).split('\n');
@@ -375,7 +378,6 @@ export class GDB4HPC extends EventEmitter {
         });
       }
       this.updateVariables().then(() => {
-        //let result = variables.filter((variable)=>variable.name === name)
         let result = this.dataStore.getVariableValue(app,name)
         resolve(result);
       });
@@ -406,7 +408,6 @@ export class GDB4HPC extends EventEmitter {
         let variables_match = this.parseVariableRecord(recordVariable.info!.get('value'));
         const numchild = parseInt(recordVariable.info!.get('numchild')) || parseInt(recordVariable.info!.get('has_more')) || 0;
         //create an array of values from mi message          
-        //type va1={proc_set:string; group:string; name:string;evaluateName:string;type:string;variableReference:number;value:string}
         let vars:any[] = [];
         variables_match.forEach(variable=>{
           let v = {proc_set:variable.proc_set,group:variable.group,name:name,evaluateName:recordVariable.info!.get('name'),
@@ -424,7 +425,6 @@ export class GDB4HPC extends EventEmitter {
   private updateVariables(): Promise<boolean> {
     return new Promise(resolve => {
       this.sendCommand(`-var-update --all-values *`).then((record:Record)=> {
-        //type va1={proc_set:string; group:string; name:string;evaluateName:string;type:string;variableReference:number;value:string}
         let vars:any[] = [];
         record.info?.get('changelist').forEach(variableRecord => {
           //get the new values for possibly different procsets and groups
@@ -522,6 +522,7 @@ export class GDB4HPC extends EventEmitter {
   public addProcset(name: string, procset: string): Promise<boolean> {
     return new Promise(resolve => {
       this.sendCommand(`-procset-define $${name} $${procset}`);
+
       if (name) this.dataStore.setStatus("focused",{name:name,procset:procset})
       resolve(true)
     })
@@ -644,8 +645,13 @@ export class GDB4HPC extends EventEmitter {
   }
 
   public setGroupFilter(value:string){
-    this.dataStore.setStatus("groupFilter",value);
+    let values = value.split(",")
+    values.forEach((val)=>{
+      let procsets=val.split(/\{|\}/)
+      this.dataStore.setStatus("groupFilter",procsets[1],procsets[0]);
+    })
   }
+  
   public setDisplayRank(num:number){
     this.dataStore.setStatus("rankDisplay",num);
   }

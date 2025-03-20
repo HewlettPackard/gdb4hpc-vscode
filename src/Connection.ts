@@ -110,7 +110,7 @@ export function displayFile(line:number, file:string){
       });
     });
   }
-  //if (!file) return;
+
   if(file.length>0&&line>0){
     if (remote){
       let local=file_map[file]?file_map[file]:file
