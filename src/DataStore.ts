@@ -290,54 +290,55 @@ export class DataStore {
     const baseRangeParts = this.parseRange(baseRanges)
     let rem=0;
     let base=0;
-    while(rem<removeRangeParts.length&&base<baseRangeParts.length){
-      let [remStart,remEnd]=removeRangeParts[rem];
-      let [baseStart,baseEnd]=baseRangeParts[base];
-      //remove range is less than the base,check next remove range
-      if(remEnd<baseStart){
-        rem++
-        continue;
-      }
-      //remove range is more than the base,check next base range
-      if(remStart>baseEnd){
-        resultParts.push([baseStart,baseEnd]);
-        base++
-        continue;
-      }
-      //remove range contains the full base, check next base range
-      if(remStart<=baseStart&&remEnd>=baseEnd){
-        base++;
-        continue;
-      }
-
-      //base range contains the full remove range
-      if(remStart>baseStart&&remEnd<baseEnd){
-        resultParts.push([baseStart,Math.min(baseEnd,remStart-1)]);
-        resultParts.push([Math.max(baseStart,remEnd+1),baseEnd]);
-        rem++
-        continue;
-      }
-
-      //partial removal(could be both)
-      //remove start is more than base start, but less than baseEnd
-      if(remStart>baseStart){
-        resultParts.push([baseStart,Math.min(baseEnd,remStart-1)]);
-      }else{
-        rem++
-      }
-      
-      //remove end is less than base end but more than base start
-      if(remEnd<baseEnd){
-        resultParts.push([Math.max(baseStart,remEnd+1),baseEnd]);
-      }else{
-        base++
-      }
-      
+    let [remStart,remEnd]=removeRangeParts[rem];
+    let [baseStart,baseEnd]=baseRangeParts[base];
+    let incremented:'rem'|'base'|null=null;
+    
+    let inc = (type) => {
+      incremented=type
+      type=="base"?++base:(type=="rem"?++rem:null)
     }
-    //add remaining base ranges
+
     while(base<baseRangeParts.length){
-      resultParts.push(baseRangeParts[base]);
-      base++;
+      //remove range is less than the base,check next remove range
+      if(incremented=="rem"){
+        rem<removeRangeParts.length?[remStart,remEnd]=removeRangeParts[rem]:[remStart,remEnd]=[-1,-1];
+      }else if(incremented=="base"){
+        [baseStart,baseEnd]=baseRangeParts[base]
+      }
+      //set increment back to null
+      incremented=null;
+      switch(true){
+        //reached end of remove range array, push base ranges until the end
+        case(remStart<0):
+          resultParts.push([baseStart,baseEnd]);
+          inc("base")
+          continue;
+
+        //base start was incremented past its end and now invalid, move on to next base range
+        case(baseStart>baseEnd):
+          inc("base")
+          continue;
+        
+        //remove range ends before base starts, check next remove range
+        case(remEnd<baseStart):
+          inc("rem")
+          continue;
+        
+        //remove range starts after the base end,check next base range
+        case(remStart>baseEnd):
+          resultParts.push([baseStart,baseEnd]);
+          inc("base")
+          continue;
+  
+        //remove range starts before or in the base range, 
+        // if range starts after base start, push the beginning to results
+        // move base start to after remove range
+        case(remStart<=baseEnd):
+          (remStart>baseStart)?resultParts.push([baseStart,remStart-1]):null;
+          baseStart=remEnd+1
+          continue;
+      }
     }
     return this.rangeToString(resultParts);
   }
