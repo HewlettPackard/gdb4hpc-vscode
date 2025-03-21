@@ -288,57 +288,22 @@ export class DataStore {
     let resultParts:[number,number][]=[]
     const removeRangeParts = this.parseRange(removeRanges)
     const baseRangeParts = this.parseRange(baseRanges)
-    let rem=0;
-    let base=0;
-    let [remStart,remEnd]=removeRangeParts[rem];
-    let [baseStart,baseEnd]=baseRangeParts[base];
-    let incremented:'rem'|'base'|null=null;
-    
-    let inc = (type) => {
-      incremented=type
-      type=="base"?++base:(type=="rem"?++rem:null)
-    }
-
-    while(base<baseRangeParts.length){
-      //check if incremented, get new range
-      if(incremented=="rem"){
-        rem<removeRangeParts.length?[remStart,remEnd]=removeRangeParts[rem]:[remStart,remEnd]=[-1,-1];
-      }else if(incremented=="base"){
-        [baseStart,baseEnd]=baseRangeParts[base]
+    let j=0;
+    for (let i=0;i<baseRangeParts.length;i++) {
+      let [bmin,bmax]=baseRangeParts[i]
+      while(bmin<=bmax&&j<removeRangeParts.length){
+        let [rmin,rmax]=removeRangeParts[j]
+        if(rmax<bmin){
+          j++;
+          continue;
+        }else if(rmin>bmax){
+          break;
+        }else if(rmin<=bmax){
+          (rmin>bmin)?resultParts.push([bmin,rmin-1]):null;
+          bmin=rmax+1
+        }
       }
-      //set increment back to null
-      incremented=null;
-      switch(true){
-        //reached end of remove range array, push base ranges until the end
-        case(remStart<0):
-          resultParts.push([baseStart,baseEnd]);
-          inc("base")
-          continue;
-
-        //base start was incremented past its end and now invalid, check next base range
-        case(baseStart>baseEnd):
-          inc("base")
-          continue;
-        
-        //remove range ends before base starts, check next remove range
-        case(remEnd<baseStart):
-          inc("rem")
-          continue;
-        
-        //remove range starts after the base end,check next base range
-        case(remStart>baseEnd):
-          resultParts.push([baseStart,baseEnd]);
-          inc("base")
-          continue;
-  
-        //remove range starts before or in the base range, 
-        // if range starts after base start, push to results range before remove start
-        // move base start to after remove range
-        case(remStart<=baseEnd):
-          (remStart>baseStart)?resultParts.push([baseStart,remStart-1]):null;
-          baseStart=remEnd+1
-          continue;
-      }
+      if(bmin<=bmax)resultParts.push([bmin,bmax]);
     }
     return this.rangeToString(resultParts);
   }
