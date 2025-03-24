@@ -128,9 +128,11 @@ export function activate(context: vscode.ExtensionContext) {
   vscode.debug.onDidChangeActiveDebugSession(async(session:vscode.DebugSession|undefined)=>{
     if (session){
       if(debugSessions.length==0) debugSessions.push(session)
-      let line = gdb4hpc.getCurrentLine(session.name);
-      let file = gdb4hpc.getCurrentFile(session.name);
-      displayFile(line,file);
+        gdb4hpc.getCurrentSource(session.name).then((source)=>{
+          if(source&&source.file!=""){
+            displayFile(source.line,source.file);
+          }
+        })
     }
   })
 }
@@ -150,17 +152,8 @@ class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory 
 	}
 }
 
-//functions to access gdb4hpc
-export function getGroupFilter(){
-  return gdb4hpc.getGroupFilter()
-}
-
 export function setGroupFilter(group: string){
   return gdb4hpc.setGroupFilter(group)
-}
-
-export function getDisplayRank(){
-  return gdb4hpc.getDisplayRank();
 }
 
 export function setDisplayRank(rank:number){
@@ -231,20 +224,20 @@ export function stepOut_cmd(){
   return gdb4hpc.stepOut()
 }
 
-export function getThreads(){
-  return gdb4hpc.getThreads()
+export function getThreads(app){
+  return gdb4hpc.getThreads(app)
 }
 
 export function stack(startFrame, endFrame,threadId,name){
   return gdb4hpc.stack(startFrame, endFrame,threadId,name)
 }
 
-export function getVariables(){
-  return gdb4hpc.getVariables()
+export function getVariables(app){
+  return gdb4hpc.getVariables(app)
 }
 
-export function evaluateVariable(expression){
-  return gdb4hpc.evaluateVariable(expression)
+export function evaluateVariable(app,expression){
+  return gdb4hpc.evaluateVariable(app,expression)
 }
 
 export function spawn(args){

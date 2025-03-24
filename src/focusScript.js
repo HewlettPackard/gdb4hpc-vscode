@@ -26,8 +26,6 @@
   var selectButton = document.createElement('button');
   selectButton.textContent='Select';
   selectButton.addEventListener('click', ()=> {
-    console.error("selected button")
-    console.error(procBox.value)
     if(nameBox.value){
       tsvscode.postMessage({
         command: 'addPe',

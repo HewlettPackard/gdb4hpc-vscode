@@ -110,7 +110,7 @@ export function displayFile(line:number, file:string){
       });
     });
   }
-  //if (!file) return;
+
   if(file.length>0&&line>0){
     if (remote){
       let local=file_map[file]?file_map[file]:file
@@ -152,6 +152,7 @@ async function getFileFromRemote(file):Promise<string>{
 
 export function writeToShell(data){
   if(shellStream) shellStream.write(`${data}`);
+
 }
 
 //if ssh connection, get remote file path otherwise return original
@@ -160,5 +161,10 @@ export function getRemoteFile(file:string):string{
     let a = (Object.keys(file_map) as string[]).find(key => file_map[key]===file)
     if(a) return a;
   }
+  return file
+}
+
+export function getLocalFile(file:string):string{
+  if(remote) return file_map[file]
   return file
 }
