@@ -10,13 +10,8 @@ import { CompareProvider } from './CompareProvider';
 import { AssertionProvider } from './AssertionProvider';
 import { DecompositionProvider } from './DecompostionProvider';
 import { FilterProvider } from './FilterProvider';
-import { GDB4HPC } from './GDB4HPC';
-import { displayFile } from './Connection';
 
-export let gdb4hpc=new GDB4HPC;
 export let debugSessions:vscode.DebugSession[] = [];
-export let app:any;
-export let count = 0;
 
 //launch config
 class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider {
@@ -28,6 +23,7 @@ class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider 
    */
   resolveDebugConfiguration(folder: WorkspaceFolder | undefined, config: DebugConfiguration, token?: CancellationToken): ProviderResult<DebugConfiguration> {
     // if launch.json is missing or empty
+    console.warn("resolving config")
     if (!config.type && !config.request && !config.name) {
       const editor = vscode.window.activeTextEditor;
       
@@ -40,17 +36,12 @@ class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider 
     }
 
     if (!config.apps){
-			return vscode.window.showInformationMessage("Cannot find a program to debug").then(_ => {
-				return undefined;	// abort launch
-			});
-    }else{
-      //change the name to app name for each session. (First one defaults to name of extension otherwise)
-      if(count<config.apps.length){
-        app=config.apps[count]
-        config.name = config.apps[count].name
-        return config;
-      }
+      console.error("No program to debug")
+      return vscode.window.showInformationMessage("Cannot find a program to debug").then(_ => {
+        return undefined;	// abort launch
+      });
     }
+    return config;
   }
 }
 
@@ -58,6 +49,7 @@ class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider 
 export function activate(context: vscode.ExtensionContext) {
   const provider = new GDB4HPCConfigurationProvider();
   context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('gdb4hpc', provider));
+
   let factory = new InlineDebugAdapterFactory();
 	context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('gdb4hpc', factory));
   context.subscriptions.push(vscode.commands.registerCommand('getContext', () => context));
@@ -97,157 +89,25 @@ export function activate(context: vscode.ExtensionContext) {
 
   //once a debugSession is launched for an app, launch another until all are launched
   vscode.debug.onDidStartDebugSession(async session => {
-    if(!debugSessions.some((sess) => session.id == sess.id)){
-      debugSessions.push(session);
-    } 
-    count+=1;
-    app=gdb4hpc.apps[count]
-    if(app){
-      const config: vscode.DebugConfiguration = {
-        ...debugSessions[0].configuration,
-      }
-      config.request = 'launch'
-      config.num = count
-      vscode.debug.startDebugging(undefined, config)
-    }
+    debugSessions.push(session);
   })
 
   //terminate the sessions, if no more are active exit gdb4hpc
   vscode.debug.onDidTerminateDebugSession(async (session:vscode.DebugSession )=>{
-    let i = debugSessions.findIndex(dbgsess=>{dbgsess.id == session.id})
-    if (i){
-      debugSessions.splice(i,1);
-    }
-    if(debugSessions.length==0){
-      gdb4hpc.sendCommand("-gdb-exit");
-      count = 0;
-    }
+    debugSessions=debugSessions.filter((dbgsess)=>dbgsess.id !== session.id)
   })
 
-  //show file and line of active debug session
-  vscode.debug.onDidChangeActiveDebugSession(async(session:vscode.DebugSession|undefined)=>{
-    if (session){
-      if(debugSessions.length==0) debugSessions.push(session)
-        gdb4hpc.getCurrentSource(session.name).then((source)=>{
-          if(source&&source.file!=""){
-            displayFile(source.line,source.file);
-          }
-        })
-    }
-  })
 }
 
 export function deactivate() {
-  count = 0;
+  //count = 0;
 	// nothing to do
 }
 
 class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
-  private session: any;
+  private session:any=new DebugSession();
 
 	createDebugAdapterDescriptor(_session: vscode.DebugSession): ProviderResult<vscode.DebugAdapterDescriptor> {
-    this.session = new DebugSession(app.name,count);
-    this.session.supportsStartDebugging =true
 		return new vscode.DebugAdapterInlineImplementation(this.session);
 	}
-}
-
-export function setGroupFilter(group: string){
-  return gdb4hpc.setGroupFilter(group)
-}
-
-export function setDisplayRank(rank:number){
-  return gdb4hpc.setDisplayRank(rank);
-}
-
-export function runAssertScript(assertion: any){
-  return gdb4hpc.runAssertionScript(assertion)
-}
-
-export function getAssertResults(assertion: any){
-  return gdb4hpc.getAssertionResults(assertion)
-}
-
-export function buildAssertScript(new_script: any){
-  return gdb4hpc.buildAssertionScript(new_script)
-}
-
-export function buildDecomposition(decomp_cmds: any){
-  return gdb4hpc.buildDecomposition(decomp_cmds)
-}
-
-export function runCompare(){
-  return gdb4hpc.runComparisons()
-}
-
-export function changeFocus(procset){
-  return gdb4hpc.changeFocus(procset)
-}
-
-export function addProcset(name, procset){
-  return gdb4hpc.addProcset(name,procset)
-}
-
-export function getProcsetList(){
-  return gdb4hpc.getProcsetList()
-}
-
-export function setBreakpoints(file, breakpoints){
-  return gdb4hpc.setBreakpoints(file,breakpoints)
-}
-
-export function launchApp(num){
-  return gdb4hpc.launchApp(num)
-}
-
-export function next_cmd(){
-  return gdb4hpc.next()
-}
-
-export function continue_cmd(){
-  return gdb4hpc.continue()
-}
-
-export function pause_cmd(){
-  return gdb4hpc.pause()
-}
-
-export function terminate_cmd(){
-  return gdb4hpc.terminate()
-}
-
-export function stepIn_cmd(){
-  return gdb4hpc.stepIn()
-}
-
-export function stepOut_cmd(){
-  return gdb4hpc.stepOut()
-}
-
-export function getThreads(app){
-  return gdb4hpc.getThreads(app)
-}
-
-export function stack(startFrame, endFrame,threadId,name){
-  return gdb4hpc.stack(startFrame, endFrame,threadId,name)
-}
-
-export function getVariables(app){
-  return gdb4hpc.getVariables(app)
-}
-
-export function evaluateVariable(app,expression){
-  return gdb4hpc.evaluateVariable(app,expression)
-}
-
-export function spawn(args){
-  return gdb4hpc.spawn(args)
-}
-
-export function sendCommand(expression){
-  return gdb4hpc.sendCommand(expression)
-}
-
-export function on_cmd(event, callback){
-  return gdb4hpc.on(event, callback)
 }

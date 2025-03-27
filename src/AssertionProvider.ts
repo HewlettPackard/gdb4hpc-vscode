@@ -1,7 +1,7 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
-import { runAssertScript, buildAssertScript,getAssertResults } from './extension';
+import { runAssertScript, buildAssertScript,getAssertResults } from './DebugSession';
 
 export var script_list: any[] =[];
 
@@ -43,30 +43,29 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 	}
 
 	addAssertionScript(): void {
-
-    let input_script_name_box: vscode.InputBoxOptions = {
+  	let input_script_name_box: vscode.InputBoxOptions = {
       prompt: "New Assertion Script Name",
       placeHolder: "script"+script_list.length,
 			value: "script"+script_list.length
     }
 
 		let input_script_stop_box: vscode.InputBoxOptions = {
-      prompt: "Set Stop on Error? (y/n)",
-      placeHolder: "n",
+    	prompt: "Set Stop on Error? (y/n)",
+    	placeHolder: "n",
 			value: "n"
-    }
+  	}
 
 		let input_script_assert_box: vscode.InputBoxOptions = {
       prompt: "Add Assertion Script or press Escape",
       placeHolder: "$App0{1}::a@file:32 == $App0{2}::a@file:32",
-    }
+  	}
 
 		let asserts: any[]= [];
 		let name = "";
 		let stopOnError = false;
 
 		//show input box for an assertion until input box is empty
-	 	var add_new_assert= () => new Promise(function(resolve) {
+		var add_new_assert= () => new Promise(function(resolve) {
 			vscode.window.showInputBox(input_script_assert_box).then(value =>{
 				if (value==undefined || value ==""){
 					resolve(true);
@@ -76,8 +75,8 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 				}
 			})
 		})
-		
-		
+			
+			
 		//show input box for name
 		vscode.window.showInputBox(input_script_name_box).then(value => {
 			if (!value) return;

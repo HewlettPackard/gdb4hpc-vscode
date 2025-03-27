@@ -1,7 +1,7 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
-import { runCompare } from './extension';
+import { runCompare } from './DebugSession';
 
 export var compare_list: any[] =[];
 

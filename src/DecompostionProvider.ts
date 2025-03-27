@@ -1,9 +1,7 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
-import { buildDecomposition } from './extension';
-
-//export var decomp_list: any[] =[];
+import { buildDecomposition } from './DebugSession';
 
 export class DecompositionProvider implements vscode.WebviewViewProvider {
   

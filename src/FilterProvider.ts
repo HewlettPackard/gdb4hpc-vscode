@@ -1,7 +1,7 @@
 // Copyright 2025 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
-import { setGroupFilter, setDisplayRank } from './extension';
+import { setGroupFilter, setDisplayRank, setDisplayApp } from './DebugSession';
 
 export class FilterProvider implements vscode.WebviewViewProvider {
   
@@ -30,6 +30,7 @@ export class FilterProvider implements vscode.WebviewViewProvider {
 				case 'filterGroup':
 					message.procset?setGroupFilter(message.procset):null;
 					message.source_filter?setDisplayRank(message.source_filter):null;
+					message.app_filter?setDisplayApp(message.app_filter):null;
 					break;
 			}
     })		

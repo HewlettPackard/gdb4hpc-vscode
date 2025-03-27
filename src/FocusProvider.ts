@@ -1,7 +1,7 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
-import { addProcset, getProcsetList,changeFocus } from './extension';
+import { addProcset, getProcsetList,changeFocus } from './DebugSession';
 
 export class FocusProvider implements vscode.WebviewViewProvider {
   
