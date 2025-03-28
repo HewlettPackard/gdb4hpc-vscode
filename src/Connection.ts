@@ -111,33 +111,35 @@ export function displayFile(line:number, file:string){
     });
   }
 
-  if(file.length>0&&line>0){
-    if (remote){
-      let local=file_map[file]?file_map[file]:file
-      let found=vscode.workspace.textDocuments.find((doc)=>doc.uri.fsPath.includes(local))
-      async function getFile(){
-        await getFileFromRemote(file).then((path)=>{
-          if(file.length==0){
-            vscode.window.showErrorMessage("No file")
-            return;
-          }
-          file=path
-        })
-      }
-      
-      if(found){
-        vscode.window.showTextDocument(found).then(editor => {
-          let range = editor.document.lineAt(line-1).range;
-          editor.selection =  new vscode.Selection(range.start, range.end);
-          editor.revealRange(range);
-        });
-      }else{
-        getFile().then(()=>{
-          openFile(file,line)
-        })
-      }
+  // if we are not running remotely, vscode will handle this for us by sending
+  // a stack trace request and opening the file in the Source attribute of the response.
+  if (remote) {
+    return;
+  }
+
+  if (file.length>0 && line>0) {
+    let local=file_map[file]?file_map[file]:file
+    let found=vscode.workspace.textDocuments.find((doc)=>doc.uri.fsPath.includes(local))
+    async function getFile(){
+      await getFileFromRemote(file).then((path)=>{
+        if(file.length==0){
+          vscode.window.showErrorMessage("No file")
+          return;
+        }
+        file=path
+      })
+    }
+
+    if(found){
+      vscode.window.showTextDocument(found).then(editor => {
+        let range = editor.document.lineAt(line-1).range;
+        editor.selection =  new vscode.Selection(range.start, range.end);
+        editor.revealRange(range);
+      });
     }else{
-      openFile(file,line)
+      getFile().then(()=>{
+        openFile(file,line)
+      })
     }
   }
 }
