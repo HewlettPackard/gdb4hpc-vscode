@@ -146,20 +146,22 @@ export class GDB4HPC extends EventEmitter {
     //setup local/remote connection
     return new Promise(resolve => {
       startConnection(this.connConfig,onData,onClose).then(()=>{
-        //if setupCommands are provided, use them to launch gdb4hpc
-        if (this.setupCommands.length>0){
-          this.setupCommands.forEach(item => {
-            writeToShell(`${item}\n`)
-          });
-          writeToShell(`gdb4hpc --interpreter=mi\n`);
-        }else{
-          vscode.window.showInformationMessage("Please add setupCommands or launch gdb4hpc in the Debug Console")
-        }
         resolve(true)
       },(err)=>{
         console.error(err)
         resolve(false)
       })
+      vscode.commands.executeCommand("workbench.panel.repl.view.focus")
+      //if setupCommands are provided, use them to launch gdb4hpc
+      if (this.setupCommands.length>0){
+        this.setupCommands.forEach(item => {
+          writeToShell(`${item}\n`)
+        });
+        writeToShell(`gdb4hpc --interpreter=mi\n`);
+      }else{
+        vscode.window.showInformationMessage("Please add setupCommands or launch gdb4hpc in the Debug Console")
+      }
+      
     });
   }
 
