@@ -97,6 +97,20 @@ export function activate(context: vscode.ExtensionContext) {
     debugSessions=debugSessions.filter((dbgsess)=>dbgsess.id !== session.id)
   })
 
+  // Uncomment to trace DAP messages in the debug console
+  // TODO: make this configurable in the launch.json
+  // vscode.debug.registerDebugAdapterTrackerFactory('*', {
+  //   createDebugAdapterTracker(_: vscode.DebugSession) {
+  //     return {
+  //       onWillReceiveMessage: m => {
+  //         console.log(`recv: ${JSON.stringify(m, undefined, 2)}`)
+  //       },
+  //       onDidSendMessage: m => {
+  //         console.log(`send: ${JSON.stringify(m, undefined, 2)}`)
+  //       },
+  //     };
+  //   }
+  // });
 }
 
 export function deactivate() {

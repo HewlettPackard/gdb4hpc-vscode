@@ -283,6 +283,8 @@ export class GDB4HPC extends EventEmitter {
     switch (record.reason) {
       case 'stopped':
           this.dataStore.setStatus("appRunning",false);
+          this.makeCommandsAvailable()
+
           let reason = record.info?.get('reason');
           let procset = record.info?.get('proc_set');
           let group = record.info?.get('group');
@@ -330,27 +332,22 @@ export class GDB4HPC extends EventEmitter {
   }
 
   public continue(): Promise<any> {
-    this.makeCommandsAvailable()
     return this.sendCommand('-exec-continue');
   }
 
   public stepIn(): Promise<any> {
-    this.makeCommandsAvailable()
     return this.sendCommand(`-exec-step`);
   }
 
   public stepOut(): Promise<any> {
-    this.makeCommandsAvailable()
     return this.sendCommand(`-exec-finish`);
   }
 
   public next(): Promise<any> {
-    this.makeCommandsAvailable()
     return this.sendCommand(`-exec-next`);
   }
 
   public pause(): Promise<any> {
-    this.makeCommandsAvailable()
     return this.sendCommand(`-exec-interrupt`);
   }
 
