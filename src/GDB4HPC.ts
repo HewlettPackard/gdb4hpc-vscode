@@ -551,8 +551,13 @@ export class GDB4HPC extends EventEmitter {
       const bkpt = record.info?.get('bkpt');
       if (bkpt) {
         this.dataStore.addFunctionBreakpoints({
-          id: parseInt(bkpt.number),
+          id: parseInt(bkpt.number) || undefined,
           verified: true,
+          line: parseInt(bkpt.line) || undefined,
+          source: {
+            name: bkpt.file || undefined,
+            path: bkpt.fullname || undefined,
+          },
           // FIXME: we need to keep track of function names, but
           // DAP breakpoint objects don't have a "name" field.
           // we use instructionReference as a hack around it for now.
