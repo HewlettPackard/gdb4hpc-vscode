@@ -15,7 +15,8 @@ export class DataStore {
   private threads:data[] = [];
   private stacks:data[] = [];
   private status:data[]=[];
-  private breakpoints:DebugProtocol.Breakpoint[]=[];
+  private sourceBreakpoints : DebugProtocol.Breakpoint[] = [];
+  private functionBreakpoints : DebugProtocol.Breakpoint[] = [];
   private threadCount:number=0;
 
   constructor(){
@@ -48,23 +49,39 @@ export class DataStore {
     return this.status.filter((item)=>item.name==name)
   }
 
-  public removeFileBreakpoints(file:string):DebugProtocol.Breakpoint[]{
-    if(this.breakpoints.length<1) return []
-    let removeBkpts=this.breakpoints.filter(bkpt => {
+  public removeSourceBreakpoints(file:string):DebugProtocol.Breakpoint[]{
+    if(this.sourceBreakpoints.length<1) return []
+    let removeBkpts=this.sourceBreakpoints.filter(bkpt => {
       return bkpt.source?.path == file;
     });
-    this.breakpoints=this.breakpoints.filter(bkpt => {
+    this.sourceBreakpoints=this.sourceBreakpoints.filter(bkpt => {
       return bkpt.source?.path != file;
     });
     return removeBkpts;
   }
 
-  public getBreakpoints():DebugProtocol.Breakpoint[]{
-    return this.breakpoints
+  public getFunctionBreakpoints():DebugProtocol.Breakpoint[]{
+    return this.functionBreakpoints;
   }
-  public addBreakpoint(bkpt:DebugProtocol.Breakpoint){
-    this.breakpoints.push(bkpt)
+
+  public addFunctionBreakpoints(bkpt:DebugProtocol.Breakpoint){
+    this.functionBreakpoints.push(bkpt)
   }
+
+  public removeFunctionBreakpoints() : DebugProtocol.Breakpoint[] {
+    let removed = this.functionBreakpoints;
+    this.functionBreakpoints = [];
+    return removed;
+  }
+
+  public getSourceBreakpoints():DebugProtocol.Breakpoint[]{
+    return this.sourceBreakpoints
+  }
+
+  public addSourceBreakpoints(bkpt:DebugProtocol.Breakpoint){
+    this.sourceBreakpoints.push(bkpt)
+  }
+
   private stackFrameCount =0
 
   //set stack with new stack results

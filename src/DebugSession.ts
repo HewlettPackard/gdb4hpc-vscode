@@ -62,6 +62,7 @@ export class DebugSession extends LoggingDebugSession {
     response.body.supportsSteppingGranularity = true;
     response.body.supportsLogPoints = true;
     response.body.supportsGotoTargetsRequest = true;
+    response.body.supportsFunctionBreakpoints = true;
     this.sendResponse(response);
     this.sendEvent(new InitializedEvent());
   }
@@ -88,9 +89,21 @@ export class DebugSession extends LoggingDebugSession {
   protected async sourceRequest(response: DebugProtocol.SourceResponse, args: DebugProtocol.SourceArguments, request?: DebugProtocol.Request): Promise<void> {
     this.sendResponse(response)
   }
-  
+
+  /*
+   * Note that this function actually only deals with filename:linenum breakpoints
+   */
   protected setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments): void {
-    gdb4hpc.setBreakpoints(args.source.path || '', args.breakpoints || []).then((res) => {
+    gdb4hpc.setSourceBreakpoints(args.source.path || '', args.breakpoints || []).then((res) => {
+      response.body = {
+        breakpoints: res
+      }
+      this.sendResponse(response);
+    });
+  }
+
+  protected setFunctionBreakPointsRequest(response: DebugProtocol.SetFunctionBreakpointsResponse, args: DebugProtocol.SetFunctionBreakpointsArguments, request?: DebugProtocol.Request): void {
+    gdb4hpc.setFunctionBreakpoints(args.breakpoints).then((res) => {
       response.body = {
         breakpoints: res
       }

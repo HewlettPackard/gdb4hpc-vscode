@@ -470,13 +470,13 @@ export class GDB4HPC extends EventEmitter {
     });
 	}
 
-  public setBreakpoints(file: string, breakpoints: DebugProtocol.SourceBreakpoint[]): Promise<DebugProtocol.Breakpoint[]> {
-    const pending: Promise<boolean>[] = [];
+  public setSourceBreakpoints(file: string, breakpoints: DebugProtocol.SourceBreakpoint[]): Promise<DebugProtocol.Breakpoint[]> {
+    let pending: Promise<boolean>[] = [];
     
     //SetBreakpointRequest clears all breakpoints
     const clearBkpts = (file: string): Promise<boolean>=>{
       return new Promise(resolve => {
-        const fileBkpts = this.dataStore.removeFileBreakpoints(file)
+        const fileBkpts = this.dataStore.removeSourceBreakpoints(file)
         fileBkpts.forEach((bkpt) => {
           this.sendCommand(`-break-delete ${bkpt.id}`);
         });
@@ -492,7 +492,7 @@ export class GDB4HPC extends EventEmitter {
         .then((breakpoint: Record) => {
           const bkpt = breakpoint.info!.get('bkpt');
           if (!bkpt) return;
-          this.dataStore.addBreakpoint({verified:true, line:bkpt.line,source:{path:file},id:parseInt(bkpt.number)})
+          this.dataStore.addSourceBreakpoints({verified:true, line:bkpt.line,source:{path:file},id:parseInt(bkpt.number)})
       });
     }
 
@@ -503,14 +503,14 @@ export class GDB4HPC extends EventEmitter {
         const intv = setInterval(() => {
           if (!this.dataStore.getStatus("appRunning")) {
             clearInterval(intv);
-            this.setBreakpoints(file, breakpoints).then(bps =>resolve(bps));
+            this.setSourceBreakpoints(file, breakpoints).then(bps =>resolve(bps));
           }
         }, 100);
       }else{
         clearBkpts(file).then(() => {
           breakpoints.forEach(srcBkpt => pending.push(insertBkpt(file, srcBkpt.line)));
           Promise.all(pending).then(() => {
-            let bkpts = this.dataStore.getBreakpoints()
+            let bkpts = this.dataStore.getSourceBreakpoints()
             if(bkpts){
               const fileBkpts = bkpts.filter(bkpt => {
                 return bkpt.source?.path == file;
@@ -522,6 +522,51 @@ export class GDB4HPC extends EventEmitter {
         });
       }
     });
+  }
+
+  public async setFunctionBreakpoints(breakpoints: DebugProtocol.FunctionBreakpoint[]): Promise<DebugProtocol.Breakpoint[]> {
+    // the passed in list is meant to replace the current list, so delete old breakpoints.
+    //
+    // XXX: disabling a breakpoint in the GUI results in an identical DAP message as deleting it,
+    // so we can't distinguish between the two actions. this means that we delete breakpoints even
+    // when they're just being disabled. this can result in subtle errors like the tracking
+    // of number of times the breakpoint has been hit being reset.
+    const functionBreakpoints = this.dataStore.removeFunctionBreakpoints();
+
+    // delete them all. sendCommand creates async promises, but no need to await pendingDeletions.
+    // since the new breakpoints below will have new unique ids, interleaving the
+    // deletion of the old breakpoints and the creation of the replacements is fine.
+    // XXX: when we decide to start handling errors properly, this sentiment will change!
+    const pendingDeletions = functionBreakpoints.map(bkpt => this.sendCommand(`-break-delete ${bkpt.id}`));
+
+    // now set and cache the new breakpoints
+    const pendingInsertions = breakpoints.map(bkpt => this.sendCommand(`-break-insert ${bkpt.name}`));
+
+    // FIXME: we should be error checking and handling the case that 1 of n commands fail
+    //
+    // FIXME: while we await here, something else could try to use functionBreakpoints.
+    // that probably would result in explosion.
+    const rawResults = await Promise.all(pendingInsertions);
+
+    for (const record of rawResults) {
+      const bkpt = record.info?.get('bkpt');
+      if (bkpt) {
+        this.dataStore.addFunctionBreakpoints({
+          id: parseInt(bkpt.number),
+          verified: true,
+          // FIXME: we need to keep track of function names, but
+          // DAP breakpoint objects don't have a "name" field.
+          // we use instructionReference as a hack around it for now.
+          instructionReference: bkpt.func,
+        });
+      } else {
+        // XXX: gdb4hpc has a bug where it doesn't return ^done when a breakpoint is
+        // inserted as pending, so in that case we'll actually never even complete
+        // the insertion of the breakpoints and we'll never reach this branch anyway
+      }
+    }
+
+    return this.dataStore.getFunctionBreakpoints();
   }
 
   public addProcset(name: string, procset: string): Promise<boolean> {
