@@ -533,22 +533,21 @@ export class GDB4HPC extends EventEmitter {
     // of number of times the breakpoint has been hit being reset.
     const functionBreakpoints = this.dataStore.removeFunctionBreakpoints();
 
-    // delete them all. sendCommand creates async promises, but no need to await pendingDeletions.
-    // since the new breakpoints below will have new unique ids, interleaving the
-    // deletion of the old breakpoints and the creation of the replacements is fine.
-    // XXX: when we decide to start handling errors properly, this sentiment will change!
+    // delete them all
     const pendingDeletions = functionBreakpoints.map(bkpt => this.sendCommand(`-break-delete ${bkpt.id}`));
 
-    // now set and cache the new breakpoints
+    // and set and cache the new breakpoints
     const pendingInsertions = breakpoints.map(bkpt => this.sendCommand(`-break-insert ${bkpt.name}`));
 
     // FIXME: we should be error checking and handling the case that 1 of n commands fail
     //
     // FIXME: while we await here, something else could try to use functionBreakpoints.
     // that probably would result in explosion.
-    const rawResults = await Promise.all(pendingInsertions);
+    const rawResults = await Promise.all([...pendingDeletions, ...pendingInsertions]);
 
     for (const record of rawResults) {
+      // note that we are also iterating the results of the deletions here. those
+      // simply return a ^done, so we are silently skipping them by checking that bkpt isn't null
       const bkpt = record.info?.get('bkpt');
       if (bkpt) {
         this.dataStore.addFunctionBreakpoints({
@@ -561,8 +560,9 @@ export class GDB4HPC extends EventEmitter {
         });
       } else {
         // XXX: gdb4hpc has a bug where it doesn't return ^done when a breakpoint is
-        // inserted as pending, so in that case we'll actually never even complete
-        // the insertion of the breakpoints and we'll never reach this branch anyway
+        // inserted as pending (and thus we don't get a record with bkpt),
+        // so in that case we'll actually never even complete the insertion of the
+        // breakpoints and we'll never reach this branch anyway. see CPE-9350
       }
     }
 
