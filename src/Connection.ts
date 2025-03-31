@@ -113,7 +113,7 @@ export function displayFile(line:number, file:string){
 
   // if we are not running remotely, vscode will handle this for us by sending
   // a stack trace request and opening the file in the Source attribute of the response.
-  if (remote) {
+  if (!remote) {
     return;
   }
 
