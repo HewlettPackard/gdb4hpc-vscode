@@ -492,10 +492,20 @@ export class GDB4HPC extends EventEmitter {
       return this.sendCommand("-gdb-set breakpoint pending on")
         .then(() => this.sendCommand(`-break-insert ${remote_file}:${line}`))
         .then((breakpoint: Record) => {
-          const bkpt = breakpoint.info!.get('bkpt');
-          if (!bkpt) return;
-          let sourceRef = this.dataStore.getStatus("remote")?1:0;
-          this.dataStore.addSourceBreakpoints({verified:true, line:bkpt.line,source:{name:bkpt.file,path:bkpt.file, sourceReference:sourceRef},id:parseInt(bkpt.number)});
+          const bkpts = breakpoint.info!.get('bkpts');
+          if (!bkpts) return;
+          for (const bkpt of bkpts) {
+            const sourceRef = this.dataStore.getStatus("remote") ? 1 : 0;
+            this.dataStore.addSourceBreakpoints({
+              verified: true,
+              line: bkpt.line,
+              source: {
+                path: file,
+                sourceReference: sourceRef,
+              },
+              id: parseInt(bkpt.number)
+            });
+          }
       });
     }
 
@@ -549,22 +559,24 @@ export class GDB4HPC extends EventEmitter {
 
     for (const record of rawResults) {
       // note that we are also iterating the results of the deletions here. those
-      // simply return a ^done, so we are silently skipping them by checking that bkpt isn't null
-      const bkpt = record.info?.get('bkpt');
-      if (bkpt) {
-        this.dataStore.addFunctionBreakpoints({
-          id: parseInt(bkpt.number) || undefined,
-          verified: true,
-          line: parseInt(bkpt.line) || undefined,
-          source: {
-            name: bkpt.file || undefined,
-            path: bkpt.fullname || undefined,
-          },
-          // FIXME: we need to keep track of function names, but
-          // DAP breakpoint objects don't have a "name" field.
-          // we use instructionReference as a hack around it for now.
-          instructionReference: bkpt.func,
-        });
+      // simply return a ^done, so we are silently skipping them by checking that bkpts isn't null
+      const bkpts = record.info?.get('bkpts');
+      if (bkpts) {
+        for (const bkpt of bkpts) {
+          this.dataStore.addFunctionBreakpoints({
+            id: parseInt(bkpt.number) || undefined,
+            verified: true,
+            line: parseInt(bkpt.line) || undefined,
+            source: {
+              name: bkpt.file || undefined,
+              path: bkpt.fullname || undefined,
+            },
+            // FIXME: we need to keep track of function names, but
+            // DAP breakpoint objects don't have a "name" field.
+            // we use instructionReference as a hack around it for now.
+            instructionReference: bkpt.func,
+          });
+        }
       } else {
         // XXX: gdb4hpc has a bug where it doesn't return ^done when a breakpoint is
         // inserted as pending (and thus we don't get a record with bkpt),
