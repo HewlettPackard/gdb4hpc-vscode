@@ -1,7 +1,7 @@
 // Copyright 2025 Hewlett Packard Enterprise Development LP.
 
 import { DebugProtocol } from '@vscode/debugprotocol';
-import { getLocalFile} from './Connection';
+import { GDB4HPC } from './GDB4HPC';
 
 export type data ={
   app:string,
@@ -18,8 +18,9 @@ export class DataStore {
   private sourceBreakpoints : DebugProtocol.Breakpoint[] = [];
   private functionBreakpoints : DebugProtocol.Breakpoint[] = [];
   private threadCount:number=0;
+  private sourceMap:{remote:string,local:string}[]=[];
 
-  constructor(){
+  constructor(private conn:any){
     this.setStatus("appRunning",false)
     this.setStatus("remote",false)
     this.setStatus("started",false)
@@ -74,6 +75,19 @@ export class DataStore {
     return removed;
   }
 
+  
+  public addSourceFile(remote:string,local:string){
+    this.sourceMap.push({remote:remote,local:local})
+  }
+
+  public convertSourceFilePath(returnRemote:boolean,file:string){
+    let found = this.sourceMap.find((item)=>item.remote==file||item.local==file)
+    if(found){
+      return returnRemote? found.remote : found.local
+    }
+    return ""
+  }
+s
   public getSourceBreakpoints():DebugProtocol.Breakpoint[]{
     return this.sourceBreakpoints
   }
@@ -90,9 +104,11 @@ export class DataStore {
     let stack = message.stack
     for (let i = startFrame; i < Math.min(endFrame, stack.length); i++) {
       let frame = stack[i].frame; 
-      let file = getLocalFile(frame.fullname)
-      stackResults.push({id:this.stackFrameCount,name:frame.func,source:{name:frame.file,path:file},
-                line:parseInt(frame.line),column:0, instructionPointerReference:frame.addr});
+      if(!frame) continue;
+      let sourceRef = this.getStatus("remote")?1:0;
+      stackResults.push({id:this.stackFrameCount, name:frame.func, 
+                source:{name:frame.file, path:frame.file, sourceReference:sourceRef},
+                line:parseInt(frame.line), column:0, instructionPointerReference:frame.addr});
       this.stackFrameCount++;
     }
     this.updateArray(this.stacks,this.parseRange(message.group),message.proc_set,stackResults.slice())
@@ -202,8 +218,9 @@ export class DataStore {
   }
 
   public parseRange(range:string):[number,number][]{
-    let result:[number,number][]=[]
+    if(!range) return [];
     range=range.replace(/\{|\}/g, "");
+    let result:[number,number][]=[]
     const items = range.split(",")
     items.forEach((item)=>{
       if(item.includes('..')){

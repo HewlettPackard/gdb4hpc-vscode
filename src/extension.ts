@@ -23,7 +23,6 @@ class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider 
    */
   resolveDebugConfiguration(folder: WorkspaceFolder | undefined, config: DebugConfiguration, token?: CancellationToken): ProviderResult<DebugConfiguration> {
     // if launch.json is missing or empty
-    console.warn("resolving config")
     if (!config.type && !config.request && !config.name) {
       const editor = vscode.window.activeTextEditor;
       
@@ -92,7 +91,6 @@ export function activate(context: vscode.ExtensionContext) {
     debugSessions.push(session);
   })
 
-  //terminate the sessions, if no more are active exit gdb4hpc
   vscode.debug.onDidTerminateDebugSession(async (session:vscode.DebugSession )=>{
     debugSessions=debugSessions.filter((dbgsess)=>dbgsess.id !== session.id)
   })

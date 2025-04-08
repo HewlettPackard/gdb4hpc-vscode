@@ -5,6 +5,7 @@ import { InitializedEvent, LoggingDebugSession, OutputEvent, Handles, StoppedEve
 TerminatedEvent} from '@vscode/debugadapter';
 import { Subject } from 'await-notify';
 import { GDB4HPC } from './GDB4HPC';
+import * as vscode from 'vscode';
 
 export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
   program: string;
@@ -17,7 +18,7 @@ export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArgu
   request: any;
 }
 
-export let gdb4hpc=new GDB4HPC();
+let gdb4hpc=new GDB4HPC();
 
 export class DebugSession extends LoggingDebugSession {
   private _configurationDone = new Subject();
@@ -68,7 +69,9 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments): void {
+    gdb4hpc.conn.removeFiles()
     gdb4hpc.terminate().then(() => {
+      this.sendEvent(new TerminatedEvent());
       this.sendResponse(response);
     });
   }
@@ -87,7 +90,37 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected async sourceRequest(response: DebugProtocol.SourceResponse, args: DebugProtocol.SourceArguments, request?: DebugProtocol.Request): Promise<void> {
-    this.sendResponse(response)
+    let localPath =args.source?.name;
+    if (!localPath) return;
+    let remotePath=localPath;
+
+    if (gdb4hpc.dataStore.getStatus("remote")) {
+      localPath=gdb4hpc.dataStore.convertSourceFilePath(false,remotePath)
+      if(localPath!.length==0){
+        await gdb4hpc.conn.getFileSFTP(remotePath).then((path)=>{
+          if(path.length==0){
+            this.sendErrorResponse(response, 1001, "No file")
+            return;
+          }
+          localPath=path
+          gdb4hpc.dataStore.addSourceFile(remotePath,localPath!);
+        },(err)=>{
+          this.sendErrorResponse(response, 1002, "Error retrieving file from remote server")
+        }); 
+      }
+    }
+
+    // Check if the file is already open in the editor
+    let openDocument = vscode.workspace.textDocuments.find(doc => doc.uri.fsPath.includes(localPath!));
+    if (!openDocument){
+      openDocument = await vscode.workspace.openTextDocument(vscode.Uri.file(localPath!));
+    }
+    let content = openDocument.getText();
+
+    response.body = {
+      content: content
+    };
+    this.sendResponse(response);
   }
 
   /*
@@ -235,12 +268,12 @@ export function setGroupFilter(group: string){
   return gdb4hpc.setGroupFilter(group)
 }
 
-export function setDisplayRank(rank:number){
-  return gdb4hpc.setDisplayRank(rank);
+export function setStatus(status:string, value:any){
+  return gdb4hpc.setStatus(status,value);
 }
 
-export function setDisplayApp(app:string){
-  return gdb4hpc.setDisplayApp(app);
+export function getStatus(status:string):any{
+  return gdb4hpc.getStatus(status);
 }
 
 export function runAssertScript(assertion: any){

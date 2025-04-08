@@ -1,15 +1,15 @@
 // Copyright 2024-2025 Hewlett Packard Enterprise Development LP.
 
-import {EventEmitter} from 'events';
+import { EventEmitter } from 'events';
 import * as vscode from 'vscode';
-import {clearInterval} from 'timers';
+import { clearInterval } from 'timers';
 import { readFileSync } from 'fs';
-import {DebugProtocol} from '@vscode/debugprotocol';
-import {Record, MIParser} from './MIParser';
+import { DebugProtocol } from '@vscode/debugprotocol';
+import { Record, MIParser } from './MIParser';
 import { compare_list } from './CompareProvider';
-import {writeToShell, startConnection, getRemoteFile, displayFile} from './Connection'
-import {ILaunchRequestArguments} from './DebugSession';
-import { DataStore,data } from './DataStore';
+import { Connection } from './Connection'
+import { ILaunchRequestArguments } from './DebugSession';
+import { DataStore, data } from './DataStore';
 
 export interface Procset {
 	name: string;
@@ -39,7 +39,8 @@ export class GDB4HPC extends EventEmitter {
     '-var-update --all-values *':"avail",
     '-stack-list-variables':"avail"
   }
-  private dataStore:DataStore=new DataStore();
+  public conn:Connection = new Connection();
+  public dataStore:DataStore = new DataStore(this.conn);
 
   //spawn gdb4hpc
   public spawn(args: ILaunchRequestArguments): Promise<boolean>  {
@@ -77,6 +78,11 @@ export class GDB4HPC extends EventEmitter {
     this.output_panel = vscode.window.createOutputChannel("Program Output")
     this.mi_log = vscode.window.createOutputChannel("MI Log");
     this.error_log = vscode.window.createOutputChannel("Error Log");
+    vscode.workspace.onDidSaveTextDocument((document)=>{
+      let localPath = document.uri.fsPath;
+      let remotePath = this.dataStore.convertSourceFilePath(true,localPath)
+      if(remotePath.length>0) this.conn.uploadFileSFTP(localPath,remotePath)
+    })
     return new Promise(resolve => {
       this.createStream().then(()=>{
         resolve(true)
@@ -145,7 +151,7 @@ export class GDB4HPC extends EventEmitter {
 
     //setup local/remote connection
     return new Promise(resolve => {
-      startConnection(this.connConfig,onData,onClose).then(()=>{
+      this.conn.startConnection(this.connConfig,onData,onClose).then(()=>{
         resolve(true)
       },(err)=>{
         console.error(err)
@@ -155,9 +161,9 @@ export class GDB4HPC extends EventEmitter {
       //if setupCommands are provided, use them to launch gdb4hpc
       if (this.setupCommands.length>0){
         this.setupCommands.forEach(item => {
-          writeToShell(`${item}\n`)
+          this.conn.writeToShell(`${item}\n`)
         });
-        writeToShell(`gdb4hpc --interpreter=mi\n`);
+        this.conn.writeToShell(`gdb4hpc --interpreter=mi\n`);
       }else{
         vscode.window.showInformationMessage("Please add setupCommands or launch gdb4hpc in the Debug Console")
       }
@@ -193,17 +199,17 @@ export class GDB4HPC extends EventEmitter {
       if (!this.dataStore.getStatus("started")){
         if (command.startsWith("gdb4hpc")){
           //start gdb4hpc with the interpreter set to mi
-          writeToShell(`${command} --interpreter=mi\n`);
+          this.conn.writeToShell(`${command} --interpreter=mi\n`);
         }else{
-          writeToShell(`${command}\n`);
+          this.conn.writeToShell(`${command}\n`);
         }
       }
       else if (!command.startsWith("-")) {
-        writeToShell(`${command}\n`);
+        this.conn.writeToShell(`${command}\n`);
         resolve(true);
       }
       else {
-        writeToShell(`${this.token + command}\n`);
+        this.conn.writeToShell(`${this.token + command}\n`);
         //once token is found the parsed record is sent back to the function that called the command
         this.cmdPending.push({token: this.token, res: ((record: Record) => {
           resolve(record);
@@ -284,17 +290,12 @@ export class GDB4HPC extends EventEmitter {
       case 'stopped':
           this.dataStore.setStatus("appRunning",false);
           this.makeCommandsAvailable()
-
           let reason = record.info?.get('reason');
           let procset = record.info?.get('proc_set');
           let group = record.info?.get('group');
           switch (reason) {
             case 'breakpoint-hit':
             case 'end-stepping-range':
-              let line = parseInt(record.info?.get('frame')["line"])
-              let file = record.info?.get('frame')["fullname"]
-              //open file and line
-              if(file!="") displayFile(line,file);
               break;
 
             case 'exited-normally':
@@ -486,18 +487,19 @@ export class GDB4HPC extends EventEmitter {
 
     //Send Command to insert new breakpoint
     const insertBkpt = (file: string, line: number): Promise<any> =>{
+      let remote_file = this.dataStore.convertSourceFilePath(true,file)
       // XXX: setting breakpoint pending every time is a hack we have to do until CPE-6345 is implemented
       return this.sendCommand("-gdb-set breakpoint pending on")
-        .then(() => this.sendCommand(`-break-insert ${file}:${line}`))
+        .then(() => this.sendCommand(`-break-insert ${remote_file}:${line}`))
         .then((breakpoint: Record) => {
           const bkpt = breakpoint.info!.get('bkpt');
           if (!bkpt) return;
-          this.dataStore.addSourceBreakpoints({verified:true, line:bkpt.line,source:{path:file},id:parseInt(bkpt.number)})
+          let sourceRef = this.dataStore.getStatus("remote")?1:0;
+          this.dataStore.addSourceBreakpoints({verified:true, line:bkpt.line,source:{name:bkpt.file,path:bkpt.file, sourceReference:sourceRef},id:parseInt(bkpt.number)});
       });
     }
 
     return new Promise(resolve => {
-      file=this.dataStore.getStatus("remote")?getRemoteFile(file):file
       //gdb4hpc needs to be connected and ready before breakpoints can be set
       if (this.dataStore.getStatus("appRunning")==true){
         const intv = setInterval(() => {
@@ -705,12 +707,12 @@ export class GDB4HPC extends EventEmitter {
       this.dataStore.setStatus("groupFilter",procsets[1],procsets[0]);
     })
   }
-  
-  public setDisplayRank(num:number){
-    this.dataStore.setStatus("displayRank",num);
-  }
 
-  public setDisplayApp(app:string){
-    this.dataStore.setStatus("appDisplay",app);
+  public setStatus(status:string, value:any){
+    this.dataStore.setStatus(status,value)
+  }
+  
+  public getStatus(status:string):any{
+    this.dataStore.getStatus(status)
   }
 }

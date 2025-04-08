@@ -7,166 +7,111 @@ import * as os from 'os'
 import * as vscode from 'vscode'
 import { setTimeout } from 'timers';
 
-let shellStream:any = null;
-let remote: boolean;
-let sftp_conn:any = null;
-let ssh_config:any;
-const file_map = {};
-let tmpDir:string ="";
+export class Connection{
+  private shellStream:any = null;
+  private sftp_conn:any = null;
+  private tmpDir:string ="";
 
-export function startConnection(configuration, dataCallback, closeCallback):Promise<void>{
-  //always remote on windows otherwise check the connection type.
-  remote = process.platform==='win32'?true:(configuration.host?true:false)
-  ssh_config=configuration
-  return new Promise((resolve,reject)=>{
-    if (remote){
-      let conn = new ssh.Client();
-      conn.on('ready',()=>{
-        conn.shell((err,stream)=>{
-          if(err){
-            reject(err)
-            return;
-          }
-          shellStream = stream;
-          stream.on('data',(data)=>{
-            let ret = dataCallback(data);
-            if(ret){
-              resolve()
+  public startConnection(configuration, dataCallback, closeCallback):Promise<void>{
+    //always remote on windows otherwise check the connection type.
+    let remote = process.platform==='win32'?true:(configuration.host?true:false)
+    return new Promise((resolve,reject)=>{
+      if (remote){
+        let conn = new ssh.Client();
+        conn.on('ready',()=>{
+          conn.shell((err,stream)=>{
+            if(err){
+              reject(err)
+              return;
             }
+            this.shellStream = stream;
+            stream.on('data',(data)=>{
+              let ret = dataCallback(data);
+              if(ret){
+                resolve()
+              }
+            })
+            stream.on('close',()=>{
+              closeCallback();
+              conn.end();
+            })
           })
-          stream.on('close',()=>{
+          conn.sftp(async (err,sftp)=>{
+            this.sftp_conn=sftp;
+          })
+        }).connect(configuration)
+      }else{
+        try{
+          const {spawn} = require('node-pty')
+          this.shellStream = spawn('bash', [], configuration);
+          this.shellStream.onData((data)=>{
+            let ret = dataCallback(data);
+            if(ret) resolve()
+          })
+          this.shellStream.onExit((e) => { 
             closeCallback();
-            removeFiles();
-            conn.end();
-          })
-        })
-        conn.sftp(async (err,sftp)=>{
-          sftp_conn=sftp;
-        })
-      }).connect(ssh_config)
-    }else{
-      try{
-        const {spawn} = require('node-pty')
-        shellStream = spawn('bash', [], ssh_config);
-        shellStream.onData((data)=>{
-          let ret = dataCallback(data);
-          if(ret) resolve()
-        })
-        shellStream.onExit((e) => { 
-          closeCallback();
-        });
-      }catch(err){
-        reject(err)
-      }
-    }
-  })
-}
-
-function removeFiles(){
-  if(tmpDir.length>0) fs.rmSync(tmpDir, { recursive: true });
-}
-
-function ensureDirExists(file_path){
-  const dir = path.dirname(file_path);
-  if(!fs.existsSync(dir)){
-    fs.mkdirSync(dir,{recursive:true});
-  }
-}
-
-async function copyFileSFTP(file):Promise<string>{
-  if (file_map[file]) {
-    return new Promise((resolve)=>{
-      resolve(file_map[file]!);
-    })
-  }
-  if (tmpDir.length==0) tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gdb4hpc-vscode-src-'));
-  const localPath = path.resolve(tmpDir, file.replace("/",""));
-  ensureDirExists(localPath)
-  file_map[file]=localPath
-  return await new Promise(async (resolve,reject)=>{
-    let timedOut = false;
-    const timeoutId = setTimeout(()=>{
-      timedOut=true;
-      reject(new Error('fastGet timed out'))
-    },120000)
-    sftp_conn.fastGet(file, localPath,(err)=>{
-      if (timedOut) return;
-      clearTimeout(timeoutId)
-      err? reject(err):resolve(localPath);
-    })
-  })
-}
-
-
-//point to the current line in the current file
-export function displayFile(line:number, file:string){
-  function openFile(file:string,line:number){
-    var openPath = vscode.Uri.file(file); 
-    vscode.workspace.openTextDocument(openPath).then(doc => {
-      vscode.window.showTextDocument(doc).then(editor => {
-        let range = editor.document.lineAt(line-1).range;
-        editor.selection =  new vscode.Selection(range.start, range.end);
-        editor.revealRange(range);
-      });
-    });
-  }
-
-  // if we are not running remotely, vscode will handle this for us by sending
-  // a stack trace request and opening the file in the Source attribute of the response.
-  if (!remote) {
-    return;
-  }
-
-  if (file.length>0 && line>0) {
-    let local=file_map[file]?file_map[file]:file
-    let found=vscode.workspace.textDocuments.find((doc)=>doc.uri.fsPath.includes(local))
-    async function getFile(){
-      await getFileFromRemote(file).then((path)=>{
-        if(file.length==0){
-          vscode.window.showErrorMessage("No file")
-          return;
+          });
+        }catch(err){
+          reject(err)
         }
-        file=path
-      })
-    }
-
-    if(found){
-      vscode.window.showTextDocument(found).then(editor => {
-        let range = editor.document.lineAt(line-1).range;
-        editor.selection =  new vscode.Selection(range.start, range.end);
-        editor.revealRange(range);
-      });
-    }else{
-      getFile().then(()=>{
-        openFile(file,line)
-      })
-    }
-  }
-}
-
-async function getFileFromRemote(file):Promise<string>{
-  return new Promise(async (resolve,reject)=>{
-    await copyFileSFTP(file).then(path=>{
-      resolve(path)
+      }
     })
-  })
-}
-
-export function writeToShell(data){
-  if(shellStream) shellStream.write(`${data}`);
-
-}
-
-//if ssh connection, get remote file path otherwise return original
-export function getRemoteFile(file:string):string{
-  if(remote){
-    let a = (Object.keys(file_map) as string[]).find(key => file_map[key]===file)
-    if(a) return a;
   }
-  return file
-}
 
-export function getLocalFile(file:string):string{
-  if(remote) return file_map[file]
-  return file
+  public async uploadFileSFTP(localPath,remotePath):Promise<boolean>{
+    if (remotePath.length<=0) {
+      return new Promise((resolve)=>{
+        resolve(false);
+      })
+    }
+    return await new Promise(async (resolve,reject)=>{
+      let timedOut = false;
+      const timeoutId = setTimeout(()=>{
+        timedOut=true;
+        reject(new Error('fastGet timed out'))
+      },120000)
+      this.sftp_conn.fastPut(localPath, remotePath,(err)=>{
+        if (timedOut) return;
+        clearTimeout(timeoutId)
+        err? reject(err):resolve(true);
+      })
+    })
+  }
+
+  public async getFileSFTP(file:string):Promise<string>{
+    if(file.length==0){
+      vscode.window.showErrorMessage("No file")
+      return ""
+    }
+    return await new Promise(async (resolve,reject)=>{
+      if (this.tmpDir.length==0) this.tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gdb4hpc-vscode-src-'));
+      const localPath = path.resolve(this.tmpDir, file.replace("/",""));
+      this.ensureDirExists(localPath)
+      let timedOut = false;
+      const timeoutId = setTimeout(()=>{
+        timedOut=true;
+        reject(new Error('fastGet timed out'))
+      },120000)
+      this.sftp_conn.fastGet(file, localPath,(err)=>{
+        if (timedOut) return;
+        clearTimeout(timeoutId)
+        err? reject(err):resolve(localPath);
+      })
+    })
+  }
+  
+  public writeToShell(data){
+    if(this.shellStream) this.shellStream.write(`${data}`);
+  }
+
+  public removeFiles(){
+    if(this.tmpDir.length>0) fs.rmSync(this.tmpDir, { force:true, recursive: true });
+  }
+  
+  private ensureDirExists(file_path){
+    const dir = path.dirname(file_path);
+    if(!fs.existsSync(dir)){
+      fs.mkdirSync(dir,{recursive:true});
+    }
+  }
 }
