@@ -1,7 +1,7 @@
 // Copyright 2025 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
-import { setGroupFilter, setStatus } from './DebugSession';
+import { setStatus } from './DebugSession';
 
 export class FilterProvider implements vscode.WebviewViewProvider {
   
@@ -28,9 +28,13 @@ export class FilterProvider implements vscode.WebviewViewProvider {
 		this._view.webview.onDidReceiveMessage( message => {
 			switch (message.command) {
 				case 'filterGroup':
-					message.procset?setGroupFilter(message.procset):null;
-					message.source_filter?setStatus("rankDisplay",message.source_filter):null;
-					message.app_filter?setStatus("appDisplay",message.app_filter):null;
+					message.procset.replace("$","")
+					let values = message.procset.split(",")
+					values.forEach((val)=>{
+						let procsets=val.split(/\{|\}/)
+						setStatus("groupFilter",procsets[1],procsets[0]);
+					})
+					message.source_filter?setStatus("sourceDisplay",{app:message.app_filter,rank:message.source_filter}):null;
 					break;
 			}
     })		

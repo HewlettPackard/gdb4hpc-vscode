@@ -40,7 +40,7 @@ export class GDB4HPC extends EventEmitter {
     '-stack-list-variables':"avail"
   }
   public conn:Connection = new Connection();
-  public dataStore:DataStore = new DataStore(this.conn);
+  public dataStore:DataStore = new DataStore();
 
   //spawn gdb4hpc
   public spawn(args: ILaunchRequestArguments): Promise<boolean>  {
@@ -53,9 +53,7 @@ export class GDB4HPC extends EventEmitter {
       username: args.connConfig.username,
       privateKey: readFileSync(args.connConfig.privateKey)
     }:{
-      name: 'xterm-color',
-      cols: 80,
-      rows: 30,
+      stdio:['pipe','pipe','pipe'],
       cwd: this.cwd,
       env: Object.assign(this.environmentVariables, process.env, this.appendedVars)
     }
@@ -94,29 +92,21 @@ export class GDB4HPC extends EventEmitter {
   public launchApps():  Promise<boolean> {
     return new Promise(resolve => {
       let merged:any=[];
-      this.apps.forEach((app)=>{
+      this.apps.forEach((app,index)=>{
         this.sendCommand(`launch $`+ app.procset + ` ` + app.program + ` ` + app.args).then(()=>{
-          let data:data[] = this.dataStore.getStatusTree("appData")
+          merged.push(app.procset)
           let split =app.procset.split(/\{|\}/)
-          data.forEach(item => {
-              let proc=item.app+"{"+item.group+"}"
-              merged.push(proc)
-          })
           this.dataStore.setStatus("focused",{name:"all",procset:merged.join(",")});
           this.dataStore.setStatus("appRunning",true)
           let group:string = "0.."+(parseInt(split[1])-1).toString()
           this.dataStore.setStatus("groupFilter",null,split[0],group)
-          this.dataStore.setStatus("displayRank",0,split[0],"0..0")  
+          if (index==0) this.dataStore.setStatus("sourceDisplay",{app:split[0],rank:"0"})  
           this.launchCount ++;
           Promise.all(this.cmdPending).then(() => {
             resolve(true); 
           });
         })
       })
-      this.dataStore.setStatus("focused",{name:"all",procset:merged.join(",")});
-      this.dataStore.setStatus("appRunning",true)
-      this.dataStore.setStatus("rankDisplay",0) 
-      this.dataStore.setStatus("appDisplay",this.apps[0].name) 
       Promise.all(this.cmdPending).then(() => {
         resolve(true); 
       });
@@ -291,21 +281,21 @@ export class GDB4HPC extends EventEmitter {
           this.dataStore.setStatus("appRunning",false);
           this.makeCommandsAvailable()
           let reason = record.info?.get('reason');
-          let procset = record.info?.get('proc_set');
-          let group = record.info?.get('group');
           switch (reason) {
             case 'breakpoint-hit':
             case 'end-stepping-range':
+              this.emitEvent(reason);
               break;
 
             case 'exited-normally':
               this.sendCommand('-gdb-exit');
+              this.emitEvent(reason);
               break;
 
             default:
               console.error('Unknown stop reason');
+              this.emitEvent(reason);
           }
-          this.emitEvent(reason,procset,group);
         break;
 
       case 'running':
@@ -314,14 +304,14 @@ export class GDB4HPC extends EventEmitter {
     }
   }
 
-  private emitEvent(event: string, procset: string, group:string){
+  private emitEvent(event: string){
     if(event=='exited-normally'){
       this.emit('exited-normally')
     }else if(event=='breakpoint-hit'|| event=='end-stepping-range'){
       this.getThreads().then((threads)=>{
-        threads.forEach ((thread)=>{
-          this.emit(event,thread.id);
-        });
+        let thread = this.dataStore.filterSourceDisplay(threads)
+        let id = thread? thread.value[0].id:0
+        this.emit(event,id);
       })
     }
   }
@@ -356,12 +346,22 @@ export class GDB4HPC extends EventEmitter {
     return this.sendCommand('-gdb-exit');
   }
 
-  public getThreads(): Promise<DebugProtocol.Thread[]> { 
+  private getThreads(): Promise<data[]> { 
     return new Promise(resolve => {
       this.sendCommand('-thread-info').then((record: Record|null) => {
-        let results:DebugProtocol.Thread[]=[]
-        if(record) this.dataStore.setThreads(record.info?.get('msgs'))
-        results = this.dataStore.getThreads()
+        if(record && record.info?.has('msgs')) this.dataStore.setThreads(record.info?.get('msgs'))
+        let threads = this.dataStore.getThreads()
+        resolve(threads);      
+      });
+    });
+  }
+
+  public getThreadResults(): Promise<DebugProtocol.Thread[]> { 
+    return new Promise(resolve => {
+      let results:DebugProtocol.Thread[]=[]
+      this.getThreads().then((threads:data[]) => {
+        let res = this.dataStore.filterGroupDisplay(threads)
+        results=res.flatMap((item)=>item.value)
         resolve(results);      
       });
     });
@@ -457,17 +457,22 @@ export class GDB4HPC extends EventEmitter {
   }
 
   public stack(startFrame: number, endFrame: number, id:number): Promise<DebugProtocol.StackFrame[]> {
-    return new Promise(resolve => {
-      this.sendCommand(`-stack-list-frames`).then((record: Record|null) => {
-        let final:DebugProtocol.StackFrame[] = [];
-        if(record) {
-          record.info?.get('msgs').forEach((message:any)=>{
-            this.dataStore.setStack(startFrame,endFrame,message)
-          })
-        }
-        final=this.dataStore.getThreadStack(id)
-        resolve(final);
-      })
+    return new Promise((resolve) => {
+      this.sendCommand('-stack-list-frames').then((record: Record | null) => {
+        let pendingPromises:Promise<boolean>[]=[]
+          if (record) {
+            pendingPromises = record.info?.get('msgs').map((message: any) =>
+              this.dataStore.setStack(startFrame, endFrame, message)
+            );
+            Promise.all(pendingPromises).then(() => {
+              const final = this.dataStore.getThreadStack(id);
+              resolve(final);
+            });
+          }else{
+            const final = this.dataStore.getThreadStack(id);
+            resolve(final);
+          }
+      });
     });
 	}
 
@@ -720,11 +725,7 @@ export class GDB4HPC extends EventEmitter {
     })
   }
 
-  public setStatus(status:string, value:any){
-    this.dataStore.setStatus(status,value)
-  }
-  
-  public getStatus(status:string):any{
-    this.dataStore.getStatus(status)
+  public setStatus(name:string,val:any,app?:string,group?:string){
+    this.dataStore.setStatus(name, val, app?app:undefined,group?group:undefined)
   }
 }

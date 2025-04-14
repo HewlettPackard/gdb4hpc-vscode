@@ -1,7 +1,6 @@
 // Copyright 2025 Hewlett Packard Enterprise Development LP.
 
 import { DebugProtocol } from '@vscode/debugprotocol';
-import { GDB4HPC } from './GDB4HPC';
 
 export type data ={
   app:string,
@@ -17,10 +16,11 @@ export class DataStore {
   private status:data[]=[];
   private sourceBreakpoints : DebugProtocol.Breakpoint[] = [];
   private functionBreakpoints : DebugProtocol.Breakpoint[] = [];
-  private threadCount:number=0;
+  private threadCount:number=1;
   private sourceMap:{remote:string,local:string}[]=[];
+  private firstRankThread:boolean=true;
 
-  constructor(private conn:any){
+  constructor(){
     this.setStatus("appRunning",false)
     this.setStatus("remote",false)
     this.setStatus("started",false)
@@ -87,7 +87,7 @@ export class DataStore {
     }
     return ""
   }
-s
+
   public getSourceBreakpoints():DebugProtocol.Breakpoint[]{
     return this.sourceBreakpoints
   }
@@ -99,19 +99,22 @@ s
   private stackFrameCount =0
 
   //set stack with new stack results
-  public setStack(startFrame:number,endFrame:number,message:any){
-    let stackResults: DebugProtocol.StackFrame[] = [];
-    let stack = message.stack
-    for (let i = startFrame; i < Math.min(endFrame, stack.length); i++) {
-      let frame = stack[i].frame; 
-      if(!frame) continue;
-      let sourceRef = this.getStatus("remote")?1:0;
-      stackResults.push({id:this.stackFrameCount, name:frame.func, 
-                source:{name:frame.file, path:frame.file, sourceReference:sourceRef},
-                line:parseInt(frame.line), column:0, instructionPointerReference:frame.addr});
-      this.stackFrameCount++;
-    }
-    this.updateArray(this.stacks,this.parseRange(message.group),message.proc_set,stackResults.slice())
+  public setStack(startFrame:number,endFrame:number,message:any):Promise<boolean>{
+    return new Promise((resolve) => {
+      let stackResults: DebugProtocol.StackFrame[] = [];
+      let stack = message.stack
+      for (let i = startFrame; i < Math.min(endFrame, stack.length); i++) {
+        let frame = stack[i].frame; 
+        if(!frame) continue;
+        let sourceRef = this.getStatus("remote")?1:0;
+        stackResults.push({id:this.stackFrameCount, name:frame.func, 
+                  source:{name:frame.file, path:frame.file, sourceReference:sourceRef},
+                  line:parseInt(frame.line), column:0, instructionPointerReference:frame.addr});
+        this.stackFrameCount++;
+      }
+      this.updateArray(this.stacks,this.parseRange(message.group),message.proc_set,stackResults.slice())
+      resolve(true)
+    })
   }
 
   public getThreadStack(id:number):DebugProtocol.StackFrame[]{
@@ -128,30 +131,40 @@ s
 
   //update threads 
   public setThreads(messages:any){
+    if (!messages) return;
     messages.forEach((message)=>{
       let group_str:string=message.group.toString().replace(/\{|\}/g, "");
+      let group_parts:[number,number][] = this.parseRange(group_str);
       let threads:DebugProtocol.Thread[] = [];
       message.threads.forEach((thread)=>{
         let name= message.proc_set+"{"+group_str+"}: "+parseInt(thread.id)
-        let found_thread = this.threads.find((thread)=>thread.name==name)
+        let found_thread = this.threads.find((thread) => 
+          thread.value.some((t: DebugProtocol.Thread) => t.name === name)
+        );
         if(found_thread){
-          threads.push(found_thread.value)
-          return
+          threads.push(found_thread.value[0])
         }else{
-          threads.push({id: this.threadCount, name: name})
-          this.threadCount++;
+          if (this.firstRankThread){
+            let display = this.getStatus("sourceDisplay")
+            let gr = this.filterRange(group_parts,this.parseRange(display.rank))
+            if(display.app===message.proc_set && gr.length>0){
+              threads.push({id:0,name:name})
+              this.firstRankThread=false
+            }
+          } else {
+            threads.push({id: this.threadCount, name: name})
+            this.threadCount++;
+          }
         }
         
       })
-      this.updateArray(this.threads,this.parseRange(group_str),message.proc_set,threads)
+      this.updateArray(this.threads,group_parts,message.proc_set,threads)
     })
   }
 
   //retrieve threads for application
-  public getThreads():DebugProtocol.Thread[]{
-    if(!this.threads) return []
-    let res = this.filterForDisplay(this.threads,this.getStatusTree("groupFilter"))
-    return res.flatMap((item)=>item.value);
+  public getThreads():data[]{
+    return this.threads
   }
 
   //update Variable list
@@ -179,7 +192,7 @@ s
 
   //get local variables for display
   public getLocalVariables():data[]{
-    let res = this.filterForDisplay(this.variables, this.getStatusTree("groupFilter"))
+    let res = this.filterGroupDisplay(this.variables)
     return res;
   }
 
@@ -263,11 +276,19 @@ s
     return resultParts;
   }
 
-  //filter what to show for groupFilter/displayRank
-  private filterForDisplay(data:data[],filter_to_use:data[]):data[]{
+  //filter what to show for groupFilter/sourceDisplay
+  public filterSourceDisplay(data:data[]): data | undefined{
+    let display = this.getStatus("sourceDisplay")
+    let res = data.find((thread)=>this.filterRange(thread.group,this.parseRange(display.rank)))
+    return res
+  }
+
+  //filter what to show for groupFilter
+  public filterGroupDisplay(data:data[]):data[]{
+    let group_filter = this.getStatusTree("groupFilter")
     let res = data.filter((item)=>{
       if(!item.group) return false
-      const filter=filter_to_use.find((filter)=>filter.app===item.app)
+      const filter=group_filter.find((filter)=>filter.app===item.app)
       if(filter){
         let new_group = this.filterRange(item.group,filter.group)
         return (new_group&&new_group.length>0)
@@ -281,8 +302,8 @@ s
   //mostly used for filtering in vscode by ranks
   private filterRange(range1Parsed:[number,number][],range2Parsed:[number,number][]):[number,number][]{
     let result: [number,number][]=[];
-    let r1=0
-    let r2=0
+    let r1 = 0
+    let r2 = 0
     while(r1<range1Parsed.length&&r2<range2Parsed.length){
       let [start1,end1]=range1Parsed[r1]
       let [start2,end2]=range2Parsed[r2]

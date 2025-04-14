@@ -35,19 +35,23 @@ export class DebugSession extends LoggingDebugSession {
   protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments) {
     const refreshFocusEvent = { event: "refreshFocus"} as DebugProtocol.Event;
 
-    gdb4hpc.on('output', (text) => {
-      const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`, 'console');
+    gdb4hpc.on('output', (text:string,category:string) => {
+      const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`, category);
       this.sendEvent(e);
     });
 
     gdb4hpc.on('breakpoint-hit', (threadID:any) => {
       this.sendEvent(new InvalidatedEvent(['variables']));
-      this.sendEvent(new StoppedEvent('breakpoint',threadID));
+      const stopEvent = new StoppedEvent('breakpoint',threadID);
+      (stopEvent as any).body.allThreadsStopped = true;
+      this.sendEvent(stopEvent);
       this.sendEvent(refreshFocusEvent);
     });
 
     gdb4hpc.on('end-stepping-range', (threadID: number) => {
-      this.sendEvent(new StoppedEvent('step', threadID));
+      const stopEvent = new StoppedEvent('step',threadID);
+      (stopEvent as any).body.allThreadsStopped = true;
+      this.sendEvent(stopEvent);
       this.sendEvent(refreshFocusEvent);
     });
 
@@ -64,6 +68,8 @@ export class DebugSession extends LoggingDebugSession {
     response.body.supportsLogPoints = true;
     response.body.supportsGotoTargetsRequest = true;
     response.body.supportsFunctionBreakpoints = true;
+    response.body.supportsDelayedStackTraceLoading = true;
+
     this.sendResponse(response);
     this.sendEvent(new InitializedEvent());
   }
@@ -156,12 +162,13 @@ export class DebugSession extends LoggingDebugSession {
 	}
 
   protected scopesRequest(response: DebugProtocol.ScopesResponse,args: DebugProtocol.ScopesArguments): void {
+    let apps = gdb4hpc.dataStore.getStatus("appData")
 
-    gdb4hpc.apps.forEach((app)=>{
-      if(!this.scopes.find((scope)=>scope.name==app.name)){
-        let handle = this.varHandles.create({name:app.name,app:app.name})
-        this.handleMap.set(app.name,handle)
-        this.scopes.push({name:app.name,variablesReference:handle,expensive:false})
+    apps.forEach((app)=>{
+      if(!this.scopes.find((scope)=>scope.name==app.procset)){
+        let handle = this.varHandles.create({name:app.procset,app:app.procset})
+        this.handleMap.set(app.procset,handle)
+        this.scopes.push({name:app.procset,variablesReference:handle,expensive:false})
       }
     })
     response.body = {
@@ -174,13 +181,14 @@ export class DebugSession extends LoggingDebugSession {
     let handle = this.varHandles.get(args.variablesReference)
     let vars:DebugProtocol.Variable[]=[]
     gdb4hpc.getVariables().then((vs) => {
-      let app = gdb4hpc.apps.find((app)=>app.name==handle.name)
+      let apps = gdb4hpc.dataStore.getStatus("appData")
+      let app = apps.find((app)=>app.procset==handle.name)
       if(app){
         let variables = vs.map((item)=>item.value)
         variables.forEach((variable)=>{
           let vRef = this.handleMap.get(variable.name)
           if(!vRef){
-            vRef = this.varHandles.create({name:variable.name,app:app.name})
+            vRef = this.varHandles.create({name:variable.name,app:app.procset})
             this.handleMap.set(variable.name,vRef)
           }
           if(!vars.find((v)=>v.variablesReference==vRef)) vars.push({name:variable.name,variablesReference:vRef,value:""})
@@ -228,7 +236,7 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
-    gdb4hpc.getThreads().then((threads:DebugProtocol.Thread[]) => {
+    gdb4hpc.getThreadResults().then((threads:DebugProtocol.Thread[]) => {
       response.body = {
         threads:  threads,
       };
@@ -264,16 +272,8 @@ export class DebugSession extends LoggingDebugSession {
   }
 }
 
-export function setGroupFilter(group: string){
-  return gdb4hpc.setGroupFilter(group)
-}
-
-export function setStatus(status:string, value:any){
-  return gdb4hpc.setStatus(status,value);
-}
-
-export function getStatus(status:string):any{
-  return gdb4hpc.getStatus(status);
+export function setStatus(name:string,val:any,app?:string,group?:string){
+  return gdb4hpc.setStatus(name, val, app?app:undefined,group?group:undefined)
 }
 
 export function runAssertScript(assertion: any){

@@ -54,7 +54,7 @@
         pe_sets = message.value;
         const list = document.getElementById('focus-list');
         list.innerHTML = "";
-
+        if (!pe_sets) break;
         pe_sets.forEach((item,i) => {
           //create checkbox
           var box = document.createElement('INPUT');

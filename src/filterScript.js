@@ -45,7 +45,7 @@
       command: 'filterGroup',
       procset: groupBox.value?groupBox.value:null,
       source_filter: rankBox.value?rankBox.value:null,
-      app_filter: rankBox.value?rankBox.value:null
+      app_filter: appBox.value?appBox.value:null
     });
   })
 
