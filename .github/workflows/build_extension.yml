@@ -43,5 +43,5 @@ jobs:
       - name: Upload .vsix
         uses: actions/upload-artifact@v4.6.2
         with:
-           name: gdb4hpc-$VERSION
+           name: gdb4hpc-${{ env.VERSION }}
            path: '*.vsix'
