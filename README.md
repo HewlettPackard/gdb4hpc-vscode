@@ -2,4 +2,4 @@
 
 A VSCode extension that provides support for debugging applications with gdb4hpc.
 
-A link to a guide will be available soon.
+User Guide: https://cpe.ext.hpe.com/docs/24.07/debugging-tools/gdb4hpc/guides/vscode-plugin.html
