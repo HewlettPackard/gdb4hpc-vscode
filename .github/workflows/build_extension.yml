@@ -1,0 +1,47 @@
+name: Build Extension
+
+on:
+  push: 
+    branches:
+      - master
+
+  pull_request:
+    branches:
+      - master
+
+  workflow_dispatch:
+
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Extract extension version
+        id: extract_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Instal dependencies
+        run: npm ci
+
+      - name: Install
+        run: npm install -g vsce
+       
+      - name: Build package
+        run: vsce package
+      
+      - name: Upload .vsix
+        uses: actions/upload-artifact@v3
+        with:
+           name: gdb4hpc-$VERSION
+           path: '*.vsix'
