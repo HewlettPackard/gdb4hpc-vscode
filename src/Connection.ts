@@ -6,17 +6,20 @@ import * as path from 'path'
 import * as os from 'os'
 import * as vscode from 'vscode'
 import { setTimeout } from 'timers';
+import { spawn } from 'child_process'
 
 export class Connection{
   private shellStream:any = null;
   private sftp_conn:any = null;
   private tmpDir:string ="";
+  private remote:boolean = false;
+  private term: vscode.Terminal|null = null;
 
   public startConnection(configuration, dataCallback, closeCallback):Promise<void>{
     //always remote on windows otherwise check the connection type.
-    let remote = process.platform==='win32'?true:(configuration.host?true:false)
+    this.remote = process.platform==='win32'?true:(configuration.host?true:false)
     return new Promise((resolve,reject)=>{
-      if (remote){
+      if (this.remote){
         let conn = new ssh.Client();
         conn.on('ready',()=>{
           conn.shell((err,stream)=>{
@@ -42,15 +45,51 @@ export class Connection{
         }).connect(configuration)
       }else{
         try{
-          const {spawn} = require('node-pty')
-          this.shellStream = spawn('bash', [], configuration);
-          this.shellStream.onData((data)=>{
-            let ret = dataCallback(data);
-            if(ret) resolve()
-          })
-          this.shellStream.onExit((e) => { 
-            closeCallback();
+          this.shellStream = spawn('script',['-q', '--command=bash -l', '/dev/null'], configuration);
+          const writeEmitter = new vscode.EventEmitter<string>();
+          const closeEmitter = new vscode.EventEmitter<void>();
+          const shellProc = this.shellStream;
+          const pty: vscode.Pseudoterminal = {
+            onDidWrite: writeEmitter.event,
+            onDidClose: closeEmitter.event,
+
+            open(): void {
+              shellProc.stdout!.on('data',(data: Buffer) => {
+                let ret = dataCallback(data);
+                writeEmitter.fire(data.toString())
+                if(ret){
+                  resolve()
+                }
+              });
+
+              shellProc.stderr!.on('data',(data:Buffer) => {
+                console.error("Error from stream:", data.toString())
+              });
+
+              shellProc.on('exit', () => {
+                closeCallback();
+                closeEmitter.fire();
+              });
+            },
+
+            close(): void {
+              shellProc.kill();
+              closeCallback();
+            },
+
+            handleInput(data: string): void {
+              if(data.startsWith("gdb4hpc")){
+                shellProc.stdin!.write(`gdb4hpc --interpreter=mi\n`)
+              }else{
+                shellProc.stdin!.write(data);
+              }
+            },
+          };
+          this.term = vscode.window.createTerminal({
+            name: 'GDB4HPC PTY',
+            pty: pty
           });
+          this.term.hide();
         }catch(err){
           reject(err)
         }
@@ -101,7 +140,8 @@ export class Connection{
   }
   
   public writeToShell(data){
-    if(this.shellStream) this.shellStream.write(`${data}`);
+    if(!this.shellStream) return;
+    this.remote?this.shellStream.write(`${data}`):this.shellStream.stdin!.write(data);
   }
 
   public removeFiles(){
