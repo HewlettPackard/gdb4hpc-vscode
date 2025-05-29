@@ -85,7 +85,7 @@ export class Connection{
     }
     return await new Promise(async (resolve,reject)=>{
       if (this.tmpDir.length==0) this.tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gdb4hpc-vscode-src-'));
-      const localPath = path.resolve(this.tmpDir, file.replace("/",""));
+      const localPath = path.resolve(this.tmpDir, String(file).replace(/\//g,''));
       this.ensureDirExists(localPath)
       let timedOut = false;
       const timeoutId = setTimeout(()=>{

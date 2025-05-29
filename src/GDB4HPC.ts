@@ -18,7 +18,7 @@ export interface Procset {
 }
 
 export class GDB4HPC extends EventEmitter {
-  private cwd: string;
+  public cwd: string;
   public apps: any;
   private environmentVariables: string[];
   private setupCommands: string[];

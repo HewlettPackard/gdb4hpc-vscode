@@ -6,6 +6,7 @@ TerminatedEvent} from '@vscode/debugadapter';
 import { Subject } from 'await-notify';
 import { GDB4HPC } from './GDB4HPC';
 import * as vscode from 'vscode';
+import path = require('path');
 
 export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
   program: string;
@@ -103,6 +104,8 @@ export class DebugSession extends LoggingDebugSession {
     if (gdb4hpc.dataStore.getStatus("remote")) {
       localPath=gdb4hpc.dataStore.convertSourceFilePath(false,remotePath)
       if(localPath!.length==0){
+        let cwd = gdb4hpc.cwd;
+        if (!remotePath.startsWith(cwd)) remotePath = path.join(cwd,remotePath)
         await gdb4hpc.conn.getFileSFTP(remotePath).then((path)=>{
           if(path.length==0){
             this.sendErrorResponse(response, 1001, "No file")
@@ -111,7 +114,7 @@ export class DebugSession extends LoggingDebugSession {
           localPath=path
           gdb4hpc.dataStore.addSourceFile(remotePath,localPath!);
         },(err)=>{
-          this.sendErrorResponse(response, 1002, "Error retrieving file from remote server")
+          this.sendErrorResponse(response, 1002, err.message)
         }); 
       }
     }
