@@ -165,13 +165,13 @@ export class DebugSession extends LoggingDebugSession {
 	}
 
   protected scopesRequest(response: DebugProtocol.ScopesResponse,args: DebugProtocol.ScopesArguments): void {
-    let apps = gdb4hpc.dataStore.getStatus("appData")
+    let apps = gdb4hpc.dataStore.getStatusTree("appData")
 
     apps.forEach((app)=>{
-      if(!this.scopes.find((scope)=>scope.name==app.procset)){
-        let handle = this.varHandles.create({name:app.procset,app:app.procset})
-        this.handleMap.set(app.procset,handle)
-        this.scopes.push({name:app.procset,variablesReference:handle,expensive:false})
+      if(!this.scopes.find((scope)=>scope.name==app.app)){
+        let handle = this.varHandles.create({name:app.app,app:app.app})
+        this.handleMap.set(app.app,handle)
+        this.scopes.push({name:app.app,variablesReference:handle,expensive:false})
       }
     })
     response.body = {
@@ -184,14 +184,14 @@ export class DebugSession extends LoggingDebugSession {
     let handle = this.varHandles.get(args.variablesReference)
     let vars:DebugProtocol.Variable[]=[]
     gdb4hpc.getVariables().then((vs) => {
-      let apps = gdb4hpc.dataStore.getStatus("appData")
-      let app = apps.find((app)=>app.procset==handle.name)
+      let apps = gdb4hpc.dataStore.getStatusTree("appData")
+      let app = apps.find((app)=>app.app==handle.name)
       if(app){
         let variables = vs.map((item)=>item.value)
         variables.forEach((variable)=>{
           let vRef = this.handleMap.get(variable.name)
           if(!vRef){
-            vRef = this.varHandles.create({name:variable.name,app:app.procset})
+            vRef = this.varHandles.create({name:variable.name,app:app.app})
             this.handleMap.set(variable.name,vRef)
           }
           if(!vars.find((v)=>v.variablesReference==vRef)) vars.push({name:variable.name,variablesReference:vRef,value:""})
