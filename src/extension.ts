@@ -36,7 +36,7 @@ class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider 
 
     if (!config.apps){
       console.error("No program to debug")
-      return vscode.window.showInformationMessage("Cannot find a program to debug").then(_ => {
+      return vscode.window.showInformationMessage("Did not find an \"apps\" entry in launch configuration.").then(_ => {
         return undefined;	// abort launch
       });
     }
