@@ -19,7 +19,7 @@ export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArgu
   request: any;
 }
 
-let gdb4hpc=new GDB4HPC();
+let gdb4hpc:GDB4HPC;
 
 export class DebugSession extends LoggingDebugSession {
   private _configurationDone = new Subject();
@@ -35,7 +35,7 @@ export class DebugSession extends LoggingDebugSession {
 
   protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments) {
     const refreshFocusEvent = { event: "refreshFocus"} as DebugProtocol.Event;
-
+    gdb4hpc = new GDB4HPC();
     gdb4hpc.on('output', (text:string,category:string) => {
       const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`, category);
       this.sendEvent(e);
@@ -76,8 +76,11 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments): void {
-    gdb4hpc.conn.removeFiles()
     gdb4hpc.terminate().then(() => {
+      this.sendEvent(new TerminatedEvent());
+      this.sendResponse(response);
+    }).catch(() => {
+      // Even if terminate fails, ensure terminate event is called
       this.sendEvent(new TerminatedEvent());
       this.sendResponse(response);
     });
@@ -97,7 +100,7 @@ export class DebugSession extends LoggingDebugSession {
   }
 
   protected async sourceRequest(response: DebugProtocol.SourceResponse, args: DebugProtocol.SourceArguments, request?: DebugProtocol.Request): Promise<void> {
-    let localPath =args.source?.name;
+    let localPath = args.source?.name;
     if (!localPath) return;
     let remotePath=localPath;
 
@@ -167,6 +170,7 @@ export class DebugSession extends LoggingDebugSession {
   protected scopesRequest(response: DebugProtocol.ScopesResponse,args: DebugProtocol.ScopesArguments): void {
     let apps = gdb4hpc.dataStore.getStatusTree("appData")
 
+    if (!apps) this.sendResponse(response)
     apps.forEach((app)=>{
       if(!this.scopes.find((scope)=>scope.name==app.app)){
         let handle = this.varHandles.create({name:app.app,app:app.app})

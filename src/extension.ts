@@ -112,8 +112,8 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-  //count = 0;
-	// nothing to do
+  // Clear debug sessions array
+  debugSessions.length = 0;
 }
 
 class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {

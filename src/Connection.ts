@@ -11,18 +11,21 @@ import { spawn } from 'child_process'
 export class Connection{
   private shellStream:any = null;
   private sftp_conn:any = null;
+  private sshConn:any = null;
   private tmpDir:string ="";
   private remote:boolean = false;
   private term: vscode.Terminal|null = null;
+  private writeEmitter: vscode.EventEmitter<string>|null = null;
+  private closeEmitter: vscode.EventEmitter<void>|null = null;
 
   public startConnection(configuration, dataCallback, closeCallback):Promise<void>{
     //always remote on windows otherwise check the connection type.
     this.remote = process.platform==='win32'?true:(configuration.host?true:false)
     return new Promise((resolve,reject)=>{
       if (this.remote){
-        let conn = new ssh.Client();
-        conn.on('ready',()=>{
-          conn.shell((err,stream)=>{
+        this.sshConn = new ssh.Client();
+        this.sshConn.on('ready',()=>{
+          this.sshConn.shell((err,stream)=>{
             if(err){
               reject(err)
               return;
@@ -36,19 +39,21 @@ export class Connection{
             })
             stream.on('close',()=>{
               closeCallback();
-              conn.end();
+              this.sshConn.end();
             })
           })
-          conn.sftp(async (err,sftp)=>{
+          this.sshConn.sftp(async (err,sftp)=>{
             this.sftp_conn=sftp;
           })
         }).connect(configuration)
       }else{
         try{
           this.shellStream = spawn('script',['-q', '--command=bash -l', '/dev/null'], configuration);
-          const writeEmitter = new vscode.EventEmitter<string>();
-          const closeEmitter = new vscode.EventEmitter<void>();
+          this.writeEmitter = new vscode.EventEmitter<string>();
+          this.closeEmitter = new vscode.EventEmitter<void>();
           const shellProc = this.shellStream;
+          const writeEmitter = this.writeEmitter;
+          const closeEmitter = this.closeEmitter;
           const pty: vscode.Pseudoterminal = {
             onDidWrite: writeEmitter.event,
             onDidClose: closeEmitter.event,
@@ -73,7 +78,12 @@ export class Connection{
             },
 
             close(): void {
-              shellProc.kill();
+              shellProc.kill('SIGTERM');
+              setTimeout(() => {
+                if (shellProc.exitCode === null && shellProc.signalCode === null) {
+                  shellProc.kill('SIGKILL');
+                }
+              }, 1000);
               closeCallback();
             },
 
@@ -152,6 +162,33 @@ export class Connection{
     const dir = path.dirname(file_path);
     if(!fs.existsSync(dir)){
       fs.mkdirSync(dir,{recursive:true});
+    }
+  }
+
+  public closeConnection(){
+    const disposeItem = (item: any,type:string) => {
+      if (item) {
+        if(type=="end"){
+          item.end();
+        }else{
+          item.dispose();
+        }
+      }
+    }
+    
+    try {
+      this.removeFiles();
+      if(this.remote){
+        disposeItem(this.sftp_conn, "end");
+        disposeItem(this.sshConn, "end");
+        disposeItem(this.shellStream, "end");
+      }else{
+        disposeItem(this.term, "");
+        disposeItem(this.writeEmitter, "");
+        disposeItem(this.closeEmitter, "");
+      }
+    } catch (error) {
+      console.error("Error closing gdb4hpc streams:", error);
     }
   }
 }

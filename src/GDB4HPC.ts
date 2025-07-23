@@ -343,7 +343,14 @@ export class GDB4HPC extends EventEmitter {
   }
 
   public terminate(): Promise<any> {
-    return this.sendCommand('-gdb-exit');
+    return new Promise((resolve) => {
+      this.sendCommand('-gdb-exit').then(() => {
+        this.conn.closeConnection();
+        resolve(true);
+      }).catch(() => {
+        this.conn.closeConnection();
+      });
+    });
   }
 
   private getThreads(): Promise<data[]> { 
