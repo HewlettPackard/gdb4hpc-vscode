@@ -1,5 +1,5 @@
 {
-	"version": "0.2.0",
+	"version": "1.0.0",
 	"configurations": [
 		{
 			"name": "Run Extension",
@@ -10,9 +10,9 @@
 				"--extensionDevelopmentPath=${workspaceFolder}"
 			],
 			"outFiles": [
-				"${workspaceFolder}/out/**/*.js"
+				"${workspaceFolder}/dist/**/*.js"
 			],
-			"preLaunchTask": "${defaultBuildTask}",
+			"preLaunchTask": "npm: compile",
 			"trace": true
 		}
 	]

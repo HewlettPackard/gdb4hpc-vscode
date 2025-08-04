@@ -14,6 +14,14 @@
         },
         {
             "type": "npm",
+            "script": "compile",
+            "group": "build",
+            "problemMatcher": [],
+            "isBackground": false,
+            "label": "npm: compile"
+        },
+        {
+            "type": "npm",
             "script": "watch",
             "group": "build",
             "problemMatcher": "$esbuild-watch",

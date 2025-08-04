@@ -23,7 +23,7 @@
   ],
   "type": "commonjs",
   "scripts": {
-    "compile": "tsc -p ./",
+    "compile": "rimraf dist && tsc -p ./",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --tsconfig=./tsconfig.json --external:vscode --loader:.node=file --format=cjs --platform=node --outfile=dist/extension.js",
     "watch": "npm run -S esbuild-base -- --sourcemap --sources-content=false --watch",
     "build": "npm run -S esbuild-base -- --sourcemap --sources-content=false",
@@ -171,7 +171,7 @@
                 "default": {
                   "host": "",
                   "port": "",
-                  "username":"",
+                  "username": "",
                   "privateKey": ""
                 }
               }
@@ -189,7 +189,7 @@
             "connConfig": {
               "host": "",
               "port": "",
-              "username":"",
+              "username": "",
               "privateKey": ""
             },
             "apps": [
