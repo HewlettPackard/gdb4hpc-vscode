@@ -1,6 +1,7 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
+import { runAssertScript, buildAssertScript,getAssertResults } from './DebugSession';
 
 export var script_list: any[] =[];
 
@@ -11,8 +12,7 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 	public _view: vscode.WebviewView;
 
 	constructor(
-		private readonly _extensionUri: vscode.Uri,
-		private readonly session: any
+		private readonly _extensionUri: vscode.Uri
 	) {	}
 
 	public resolveWebviewView(webviewView: vscode.WebviewView,context: vscode.WebviewViewResolveContext,_token: vscode.CancellationToken) {
@@ -43,30 +43,29 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 	}
 
 	addAssertionScript(): void {
-
-    let input_script_name_box: vscode.InputBoxOptions = {
+  	let input_script_name_box: vscode.InputBoxOptions = {
       prompt: "New Assertion Script Name",
       placeHolder: "script"+script_list.length,
 			value: "script"+script_list.length
     }
 
 		let input_script_stop_box: vscode.InputBoxOptions = {
-      prompt: "Set Stop on Error? (y/n)",
-      placeHolder: "n",
+    	prompt: "Set Stop on Error? (y/n)",
+    	placeHolder: "n",
 			value: "n"
-    }
+  	}
 
 		let input_script_assert_box: vscode.InputBoxOptions = {
       prompt: "Add Assertion Script or press Escape",
       placeHolder: "$App0{1}::a@file:32 == $App0{2}::a@file:32",
-    }
+  	}
 
 		let asserts: any[]= [];
 		let name = "";
 		let stopOnError = false;
 
 		//show input box for an assertion until input box is empty
-	 	var add_new_assert= () => new Promise(function(resolve) {
+		var add_new_assert= () => new Promise(function(resolve) {
 			vscode.window.showInputBox(input_script_assert_box).then(value =>{
 				if (value==undefined || value ==""){
 					resolve(true);
@@ -76,8 +75,8 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 				}
 			})
 		})
-		
-		
+			
+			
 		//show input box for name
 		vscode.window.showInputBox(input_script_name_box).then(value => {
 			if (!value) return;
@@ -90,7 +89,7 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 					let new_script={name:name, stopOnError: stopOnError, asserts:asserts, checked: false}
 					
 					//build assert script
-					this.session.gdb4hpc.buildAssertionScript(new_script).then(()=>{
+					buildAssertScript(new_script).then(()=>{
 						script_list.push(new_script)
 						this._view?.webview.postMessage({type:'scriptsUpdated', value: script_list});
 					},null);
@@ -104,7 +103,7 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 		if (!choice[0].name){
 			return;
 		}
-		this.session.gdb4hpc.runAssertionScript(choice[0]);
+		runAssertScript(choice[0]);
 	}
 
 	getAssertionResults(){
@@ -112,7 +111,7 @@ export class AssertionProvider implements vscode.WebviewViewProvider {
 		if (!choice){
 			return;
 		}
-		this.session.gdb4hpc.getAssertionResults(choice[0]).then(()=>{
+		getAssertResults(choice[0]).then(()=>{
 			this._view?.webview.postMessage({type:'scriptsUpdated', value: script_list});
 		});
 	}

@@ -1,20 +1,22 @@
-// Copyright 2024 Hewlett Packard Enterprise Development LP.
+// Copyright 2024-2025 Hewlett Packard Enterprise Development LP.
 
 'use strict';
 
 import * as vscode from 'vscode';
-import {WorkspaceFolder,DebugConfiguration,CancellationToken,ProviderResult} from 'vscode';
-import {DebugSession} from './DebugSession';
+import { WorkspaceFolder,DebugConfiguration,CancellationToken,ProviderResult} from 'vscode';
+import { DebugSession } from './DebugSession';
 import { FocusProvider} from './FocusProvider';
 import { CompareProvider } from './CompareProvider';
 import { AssertionProvider } from './AssertionProvider';
 import { DecompositionProvider } from './DecompostionProvider';
+import { FilterProvider } from './FilterProvider';
 
+export let debugSessions:vscode.DebugSession[] = [];
 
+//launch config
 class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider {
 
   public apps: any;
-
   /**
    * Massage a debug configuration just before a debug session is being launched,
    * e.g. add all missing attributes to the debug configuration.
@@ -33,16 +35,16 @@ class GDB4HPCConfigurationProvider implements vscode.DebugConfigurationProvider 
     }
 
     if (!config.apps){
-			return vscode.window.showInformationMessage("Cannot find a program to debug").then(_ => {
-				return undefined;	// abort launch
-			});
-    }else{
-      this.apps = config.apps;
+      console.error("No program to debug")
+      return vscode.window.showInformationMessage("Did not find an \"apps\" entry in launch configuration.").then(_ => {
+        return undefined;	// abort launch
+      });
     }
     return config;
   }
 }
 
+//activate extension
 export function activate(context: vscode.ExtensionContext) {
   const provider = new GDB4HPCConfigurationProvider();
   context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('gdb4hpc', provider));
@@ -51,64 +53,73 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('gdb4hpc', factory));
   context.subscriptions.push(vscode.commands.registerCommand('getContext', () => context));
 
-  let session = factory.getSession();
-  
   //Add Focus Panel to sidebar
-  let focusProvider = new FocusProvider(context.extensionUri, session);
+  let focusProvider = new FocusProvider(context.extensionUri);
   vscode.window.registerWebviewViewProvider('focusView', focusProvider);
-  vscode.commands.registerCommand('focusView.addEntry', () => {focusProvider.addPe()});
+
+  //Add Filter Panel to sidebar
+  let filterProvider = new FilterProvider(context.extensionUri);
+  vscode.window.registerWebviewViewProvider('filterView', filterProvider);
 
   //Add decomposition panel to sidebar
-  let decompositionProvider = new DecompositionProvider(context.extensionUri, session);
+  let decompositionProvider = new DecompositionProvider(context.extensionUri);
   vscode.window.registerWebviewViewProvider("decompView", decompositionProvider);
   vscode.commands.registerCommand('decompView.addEntry', () => {decompositionProvider.addDecomposition()});
 
   //Add comparison panel to sidebar
-  let compareProvider = new CompareProvider(context.extensionUri, session);
+  let compareProvider = new CompareProvider(context.extensionUri);
   vscode.window.registerWebviewViewProvider("compareView", compareProvider);
   vscode.commands.registerCommand('compareView.runCompares', () => {compareProvider.runComparisons()});
   vscode.commands.registerCommand('compareView.addEntry', () => {compareProvider.addComparison();});
 
   //Add assertion panel to sidebar
-  let assertionProvider = new AssertionProvider(context.extensionUri, session);
+  let assertionProvider = new AssertionProvider(context.extensionUri);
   vscode.window.registerWebviewViewProvider("assertView", assertionProvider);
   vscode.commands.registerCommand('assertView.runScripts', () => {assertionProvider.runAssertionScript()});
   vscode.commands.registerCommand('assertView.getInfo', () => {assertionProvider.getAssertionResults()});
   vscode.commands.registerCommand('assertView.addEntry', () => {assertionProvider.addAssertionScript()});
-  
+
   //get events from providers
   context.subscriptions.push(vscode.debug.onDidReceiveDebugSessionCustomEvent((e) => {
     if(e.event == "refreshFocus"){
       focusProvider.refresh();
     }
-  }));    
-  
-  /* 
-  //Extra debug data to development console
-  vscode.debug.registerDebugAdapterTrackerFactory('*', {
-    createDebugAdapterTracker(session: vscode.DebugSession) {
-      return {
-        onWillReceiveMessage: m => console.log(`> ${JSON.stringify(m, undefined, 2)}`),
-        onDidSendMessage: m => console.log(`< ${JSON.stringify(m, undefined, 2)}`)
-      };
-    }
-  });
-  */
+  })); 
+
+  //once a debugSession is launched for an app, launch another until all are launched
+  vscode.debug.onDidStartDebugSession(async session => {
+    debugSessions.push(session);
+  })
+
+  vscode.debug.onDidTerminateDebugSession(async (session:vscode.DebugSession )=>{
+    debugSessions=debugSessions.filter((dbgsess)=>dbgsess.id !== session.id)
+  })
+
+  // Uncomment to trace DAP messages in the debug console
+  // TODO: make this configurable in the launch.json
+  // vscode.debug.registerDebugAdapterTrackerFactory('*', {
+  //   createDebugAdapterTracker(_: vscode.DebugSession) {
+  //     return {
+  //       onWillReceiveMessage: m => {
+  //         console.log(`recv: ${JSON.stringify(m, undefined, 2)}`)
+  //       },
+  //       onDidSendMessage: m => {
+  //         console.log(`send: ${JSON.stringify(m, undefined, 2)}`)
+  //       },
+  //     };
+  //   }
+  // });
 }
 
 export function deactivate() {
-	// nothing to do
+  // Clear debug sessions array
+  debugSessions.length = 0;
 }
 
 class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
-  private session: any = new DebugSession();
+  private session:any=new DebugSession();
+
 	createDebugAdapterDescriptor(_session: vscode.DebugSession): ProviderResult<vscode.DebugAdapterDescriptor> {
 		return new vscode.DebugAdapterInlineImplementation(this.session);
 	}
-
-  getSession(){
-    return this.session;
-  }
-
 }
-

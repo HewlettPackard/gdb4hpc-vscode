@@ -1,6 +1,7 @@
 // Copyright 2024 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
+import { addProcset, getProcsetList,changeFocus } from './DebugSession';
 
 export class FocusProvider implements vscode.WebviewViewProvider {
   
@@ -9,11 +10,10 @@ export class FocusProvider implements vscode.WebviewViewProvider {
 	public _view: vscode.WebviewView;
 
 	constructor(
-		private readonly _extensionUri: vscode.Uri,
-		private readonly session: any
+		private readonly _extensionUri: vscode.Uri
 	) {	}
 
-	public resolveWebviewView(webviewView: vscode.WebviewView,context: vscode.WebviewViewResolveContext,_token: vscode.CancellationToken) {
+	public resolveWebviewView(webviewView: vscode.WebviewView, context: vscode.WebviewViewResolveContext,_token: vscode.CancellationToken) {
 		this._view = webviewView || null;
 
 		this._view.webview.options = {
@@ -27,9 +27,11 @@ export class FocusProvider implements vscode.WebviewViewProvider {
 
 		this._view.webview.onDidReceiveMessage( message => {
       switch (message.command) {
-        case 'toggledFocus':
-					this.session.gdb4hpc.changeFocus(message.id).then(this.refresh());
+        case 'selectedFocus':
+					changeFocus(message.procset).then(()=>this.refresh());
 					break;
+				case 'addPe':
+					addProcset(message.name, message.procset).then(()=>this.refresh())
       }
     })		
 
@@ -37,35 +39,8 @@ export class FocusProvider implements vscode.WebviewViewProvider {
 		this._view.webview.html = this._getHtmlForWebview(this._view.webview);	
 	}
 
-	addPe(): void {
-    let input_name_box: vscode.InputBoxOptions = {
-      prompt: "Name for new PE ",
-      placeHolder: "abc"
-    }
-
-    let input_procset_box: vscode.InputBoxOptions = {
-      prompt: "Name for new PE ",
-      placeHolder: "$App0{2},$App1{0..3}"
-    }
-
-    let name = "";
-    let procset = "";
-  
-    //show input boxes for name and procset and then send defset message
-    vscode.window.showInputBox(input_name_box).then(value => {
-      if (!value) return;
-      name = value;
-      vscode.window.showInputBox(input_procset_box).then(value => {
-        if (!value) return;
-        procset = value;
-        this.session.gdb4hpc.addProcset(name, procset).then(this.refresh())
-      });
-    });    
-  }
-
 	refresh(): void {
-    this.session.gdb4hpc.getProcsetList().then((a)=> {
-			console.warn(a)
+    getProcsetList().then((a)=> {
 			this._view?.webview.postMessage({type:'focusUpdated', value: a})
 		});
   }
@@ -108,6 +83,8 @@ export class FocusProvider implements vscode.WebviewViewProvider {
     </head>
     <body>
 				<ul id='focus-list'>
+				</ul>
+				<ul id='focus-input'>
 				</ul>
 				<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>

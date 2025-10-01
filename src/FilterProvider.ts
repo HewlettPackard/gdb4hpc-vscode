@@ -1,13 +1,11 @@
-// Copyright 2024 Hewlett Packard Enterprise Development LP.
+// Copyright 2025 Hewlett Packard Enterprise Development LP.
 
 import * as vscode from 'vscode';
-import { runCompare } from './DebugSession';
+import { setStatus } from './DebugSession';
 
-export var compare_list: any[] =[];
-
-export class CompareProvider implements vscode.WebviewViewProvider {
+export class FilterProvider implements vscode.WebviewViewProvider {
   
-  public static readonly viewType = 'compareView';
+  public static readonly viewType = 'filterView';
 
 	public _view: vscode.WebviewView;
 
@@ -15,7 +13,7 @@ export class CompareProvider implements vscode.WebviewViewProvider {
 		private readonly _extensionUri: vscode.Uri
 	) {	}
 
-	public resolveWebviewView(webviewView: vscode.WebviewView,context: vscode.WebviewViewResolveContext,_token: vscode.CancellationToken) {
+	public resolveWebviewView(webviewView: vscode.WebviewView, context: vscode.WebviewViewResolveContext,_token: vscode.CancellationToken) {
 		this._view = webviewView || null;
 
 		this._view.webview.options = {
@@ -27,37 +25,22 @@ export class CompareProvider implements vscode.WebviewViewProvider {
 			]
 		};
 
-		//reference to display of panel
-		this._view.webview.html = this._getHtmlForWebview(this._view.webview);
-	
-		//received message from script
 		this._view.webview.onDidReceiveMessage( message => {
-      switch (message.command) {
-        case 'toggledCompare':
-					compare_list[message.id].checked = message.checked;
-      }
+			switch (message.command) {
+				case 'filterGroup':
+					message.procset.replace("$","")
+					let values = message.procset.split(",")
+					values.forEach((val)=>{
+						let procsets=val.split(/\{|\}/)
+						setStatus("groupFilter",procsets[1],procsets[0]);
+					})
+					message.source_filter?setStatus("sourceDisplay",{app:message.app_filter,rank:message.source_filter}):null;
+					break;
+			}
     })		
-	}
 
-	addComparison(): void {
-    let input_comp_box: vscode.InputBoxOptions = {
-      prompt: "New Comparison ",
-      placeHolder: "$App0{0}::u=$App0{0}::u"
-    }
-
-    //show input boxes for name and procset and then send defset message
-    vscode.window.showInputBox(input_comp_box).then(value => {
-      if (!value) return;
-			compare_list.push({text:value,result:"",checked: false})
-			//post message to script
-			this._view?.webview.postMessage({type:'comparesUpdated', value: compare_list});
-    });    
-  }
-
-	runComparisons(){
-		runCompare().then(()=>{
-			this._view?.webview.postMessage({type:'comparesUpdated', value: compare_list});
-		});
+		//reference to display of panel
+		this._view.webview.html = this._getHtmlForWebview(this._view.webview);	
 	}
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
@@ -65,8 +48,8 @@ export class CompareProvider implements vscode.WebviewViewProvider {
 		const styleResetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'reset.css'));
 		const styleVSCodeUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'vscode.css'));
 
-		//reference to script used by compare display
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'src', 'compareScript.js'));
+		//reference to script used by assertion display
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'src', 'filterScript.js'));
 
 		//security policy reference
 		function getNonce() {
@@ -97,8 +80,8 @@ export class CompareProvider implements vscode.WebviewViewProvider {
 				<link href="${styleVSCodeUri}" rel="stylesheet">
     </head>
     <body>
-				<dl id='compare-list'>
-				</dl>
+				<ul id='filter-input'>
+				</ul>
 				<script nonce="${nonce}" src="${scriptUri}"></script>
 		</body>
     </html>`;

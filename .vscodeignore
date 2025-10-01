@@ -1,6 +1,5 @@
 node_modules
 !node_modules/await-notify
-!node_modules/node-pty
 !node_modules/@types
 !node_modules/@vscode
 node_modules/@vscode/vsce
@@ -10,6 +9,7 @@ src
 !src/compareScript.js
 !src/decompositionScript.js
 !src/focusScript.js
+!src/filterScript.js
 
 out
 .vscode

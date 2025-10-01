@@ -23,8 +23,8 @@
   ],
   "type": "commonjs",
   "scripts": {
-    "compile": "tsc -p ./",
-    "esbuild-base": "esbuild ./src/extension.ts --bundle --tsconfig=./tsconfig.json --external:vscode --external:node-pty --loader:.node=file --format=cjs --platform=node --outfile=dist/extension.js",
+    "compile": "rimraf dist && tsc -p ./",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --tsconfig=./tsconfig.json --external:vscode --loader:.node=file --format=cjs --platform=node --outfile=dist/extension.js",
     "watch": "npm run -S esbuild-base -- --sourcemap --sources-content=false --watch",
     "build": "npm run -S esbuild-base -- --sourcemap --sources-content=false",
     "package": "vsce package --no-yarn",
@@ -37,14 +37,14 @@
     "@vscode/debugadapter": "^1.64.0",
     "@vscode/debugprotocol": "^1.64.0",
     "await-notify": "^1.0.1",
-    "node-pty": "^1.0.0"
+    "ssh2": "^1.16.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
     "@vscode/vsce": "^2.31.0",
     "esbuild": "^0.19.12",
-    "typescript": "^5.3.3",
-    "rimraf": "^6.0.1"
+    "rimraf": "^6.0.1",
+    "typescript": "^5.3.3"
   },
   "main": "./dist/extension.js",
   "activationEvents": [
@@ -55,7 +55,7 @@
     "request": "never"
   },
   "contributes": {
-    "languages":[
+    "languages": [
       {
         "id": "fortran",
         "extensions": [
@@ -76,6 +76,12 @@
           "id": "focusView",
           "name": "Focus",
           "contextualTitle": "Focus"
+        },
+        {
+          "type": "webview",
+          "id": "filterView",
+          "name": "Display Filter",
+          "contextualTitle": "Display Filter"
         },
         {
           "type": "webview",
@@ -152,10 +158,22 @@
                 "description": "Environment variables to set in debugger shell",
                 "default": {}
               },
-              "dbgversion": {
-                "type": "string",
-                "description": "Path to debugger",
-                "default": "gdb4hpc"
+              "setupCommands": {
+                "type": "array",
+                "description": "Commands to run in terminal before gdb4hpc starts",
+                "default": [
+                  "module load gdb4hpc"
+                ]
+              },
+              "connConfig": {
+                "type": "object",
+                "description": "ssh information",
+                "default": {
+                  "host": "",
+                  "port": "",
+                  "username": "",
+                  "privateKey": ""
+                }
               }
             }
           }
@@ -165,7 +183,15 @@
             "type": "gdb4hpc",
             "request": "launch",
             "name": "GDB4HPC",
-            "dbgversion": "",
+            "setupCommands": [
+              "module load gdb4hpc"
+            ],
+            "connConfig": {
+              "host": "",
+              "port": "",
+              "username": "",
+              "privateKey": ""
+            },
             "apps": [
               {
                 "procset": "App0{1}",
@@ -180,10 +206,6 @@
       }
     ],
     "commands": [
-      {
-        "command": "focusView.addEntry",
-        "title": "Add"
-      },
       {
         "command": "decompView.addEntry",
         "title": "Add"
@@ -211,11 +233,6 @@
     ],
     "menus": {
       "view/title": [
-        {
-          "command": "focusView.addEntry",
-          "when": "view == focusView",
-          "group": "navigation"
-        },
         {
           "command": "decompView.addEntry",
           "when": "view == decompView",
