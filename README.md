@@ -23,8 +23,9 @@ The current online documentation for gdb4hpc and this vscode plugin are availabl
 https://cpe.ext.hpe.com/docs/latest/debugging-tools/gdb4hpc/guides/vscode-plugin.html
 
 > Note:
-> Version 2.0.0 of this plugin requires at least gdb4hpc version 4.16.5
-> gdb4hpc version 4.16.0-4.16.4 will only work with plugin version 1.0.0
+> Version 3.0.0 of this plugin requires at least gdb4hpc version 4.16.5
+> gdb4hpc version 4.16.0-4.16.4 will only work with plugin version 2.0.0
+> Version 1.0.0 of this plugin was for internal testing only
 > 
 > Future version will use a more rational scheme for managing the dependency.
 
